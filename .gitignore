@@ -1,0 +1,16 @@
+#AI记忆缓存
+dd/.codebuddy/
+
+#前端依赖、构建产物
+dd/node_modules/
+dd/dist/
+dd/.vscode/
+
+#后端
+.idea/
+target/
+*.iml
+
+#系统文件
+*.log
+.DS_Store
