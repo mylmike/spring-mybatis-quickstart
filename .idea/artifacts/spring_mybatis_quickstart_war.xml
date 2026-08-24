@@ -1,0 +1,14 @@
+<component name="ArtifactManager">
+  <artifact type="war" name="spring-mybatis-quickstart:war">
+    <output-path>$PROJECT_DIR$/spring-mybatis-quickstart/target</output-path>
+    <properties id="maven-jee-properties">
+      <options>
+        <module>spring-mybatis-quickstart</module>
+        <packaging>war</packaging>
+      </options>
+    </properties>
+    <root id="archive" name="snapshot.war">
+      <element id="artifact" artifact-name="spring-mybatis-quickstart:war exploded" />
+    </root>
+  </artifact>
+</component>

@@ -1,0 +1,8 @@
+2025-06-15 11:10:02 [main] INFO  c.i.SpringMybatisQuickstartApplicationTests - Starting SpringMybatisQuickstartApplicationTests using Java 24.0.1 with PID 22328 (started by yilin in E:\xx\maven\maven-web1\maven-web1\spring-mybatis-quickstart\spring-mybatis-quickstart)
+2025-06-15 11:10:02 [main] INFO  c.i.SpringMybatisQuickstartApplicationTests - No active profile set, falling back to 1 default profile: "default"
+2025-06-15 11:10:05 [main] INFO  c.i.SpringMybatisQuickstartApplicationTests - Started SpringMybatisQuickstartApplicationTests in 3.21 seconds (process running for 4.871)
+2025-06-15 11:10:06 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Starting...
+2025-06-15 11:10:06 [main] INFO  com.zaxxer.hikari.pool.HikariPool - HikariPool-1 - Added connection oracle.jdbc.driver.T4CConnection@370c7cc5
+2025-06-15 11:10:06 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Start completed.
+2025-06-15 11:10:07 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown initiated...
+2025-06-15 11:10:07 [SpringApplicationShutdownHook] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown completed.

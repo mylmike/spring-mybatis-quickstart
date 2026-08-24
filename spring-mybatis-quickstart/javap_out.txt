@@ -1,0 +1,43 @@
+Compiled from "OoelucSqlProvider.java"
+public class com.itheima.mapper.second.OoelucSqlProvider {
+  private static final java.lang.String TABLE = "ooeluc_t";
+
+  public com.itheima.mapper.second.OoelucSqlProvider();
+    Code:
+       0: aload_0
+       1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+       4: return
+
+  public java.lang.String query(java.util.Map<java.lang.String, java.lang.Object>);
+    Code:
+       0: aload_1
+       1: ldc           #7                  // String ooeluc003
+       3: invokeinterface #9,  2            // InterfaceMethod java/util/Map.containsKey:(Ljava/lang/Object;)Z
+       8: ifeq          59
+      11: aload_1
+      12: ldc           #7                  // String ooeluc003
+      14: invokeinterface #15,  2           // InterfaceMethod java/util/Map.get:(Ljava/lang/Object;)Ljava/lang/Object;
+      19: ifnull        59
+      22: aload_1
+      23: ldc           #7                  // String ooeluc003
+      25: invokeinterface #15,  2           // InterfaceMethod java/util/Map.get:(Ljava/lang/Object;)Ljava/lang/Object;
+      30: invokevirtual #19                 // Method java/lang/Object.toString:()Ljava/lang/String;
+      33: invokevirtual #23                 // Method java/lang/String.trim:()Ljava/lang/String;
+      36: astore_2
+      37: aload_2
+      38: invokevirtual #28                 // Method java/lang/String.isEmpty:()Z
+      41: ifne          59
+      44: aload_1
+      45: ldc           #32                 // String _ooeluc003Like
+      47: aload_2
+      48: invokedynamic #34,  0             // InvokeDynamic #0:makeConcatWithConstants:(Ljava/lang/String;)Ljava/lang/String;
+      53: invokeinterface #38,  3           // InterfaceMethod java/util/Map.put:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+      58: pop
+      59: new           #42                 // class com/itheima/mapper/second/OoelucSqlProvider$1
+      62: dup
+      63: aload_0
+      64: aload_1
+      65: invokespecial #44                 // Method com/itheima/mapper/second/OoelucSqlProvider$1."<init>":(Lcom/itheima/mapper/second/OoelucSqlProvider;Ljava/util/Map;)V
+      68: invokevirtual #47                 // Method com/itheima/mapper/second/OoelucSqlProvider$1.toString:()Ljava/lang/String;
+      71: areturn
+}
