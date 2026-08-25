@@ -10,6 +10,7 @@ dd/.vscode/
 .idea/
 target/
 *.iml
+*.class
 
 #系统文件
 *.log
