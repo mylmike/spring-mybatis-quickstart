@@ -15,3 +15,5 @@ target/
 #系统文件
 *.log
 .DS_Store
+MEMORY.md
+2026‑08‑25.md
