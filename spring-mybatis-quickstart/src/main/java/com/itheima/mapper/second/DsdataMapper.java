@@ -138,4 +138,10 @@ public interface DsdataMapper {
                                                @Param("site") String site,
                                                @Param("itemNo") String itemNo);
 
+    /**
+     * 查询管理系统菜单目录 gzweuc_t 原始数据
+     */
+    @SelectProvider(type = GzweucSqlProvider.class, method = "queryMenuTree")
+    List<Map<String, Object>> queryMenuTree(Map<String, Object> params);
+
 }

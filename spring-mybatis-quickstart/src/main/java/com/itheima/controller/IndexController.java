@@ -28,6 +28,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -1775,6 +1776,95 @@ public class  IndexController {
         row.set("订单需求用量", demandQty);
         row.set("level", level);
         return row;
+    }
+
+    /**
+     * 查询管理系统菜单目录树（gzweuc_t）
+     * 参数：ent 默认 60；site
+     */
+    @PostMapping("/queryMenuTree")
+    public JSONObject queryMenuTree(@RequestBody Map<String, Object> params) {
+        JSONObject result = new JSONObject();
+        try {
+            Map<String, Object> p = new HashMap<>();
+            p.put("gzweucent", getString(params, "ent") == null ? "60" : getString(params, "ent"));
+
+            List<Map<String, Object>> rows = dsdataMapper.queryMenuTree(p);
+            if (rows == null || rows.isEmpty()) {
+                result.set("success", true);
+                result.set("tree", new JSONArray());
+                result.set("total", 0);
+                return result;
+            }
+
+            // 收集所有目录编号，用于判断根节点
+            Set<String> idSet = new HashSet<>();
+            for (Map<String, Object> row : rows) {
+                idSet.add(stringValueIgnoreCase(row, "gzweuc002"));
+            }
+
+            // 按父节点分组
+            Map<String, List<Map<String, Object>>> childrenMap = new HashMap<>();
+            List<Map<String, Object>> roots = new ArrayList<>();
+            for (Map<String, Object> row : rows) {
+                String parent = stringValueIgnoreCase(row, "gzweuc001");
+                String ownId = stringValueIgnoreCase(row, "gzweuc002");
+                // 根节点判定：上阶目录为空，或上阶目录不存在于结果集中，或上阶目录等于自身编号（如顶层自引用 000）
+                if (isBlank(parent) || !idSet.contains(parent) || parent.equals(ownId)) {
+                    roots.add(row);
+                } else {
+                    childrenMap.computeIfAbsent(parent, k -> new ArrayList<>()).add(row);
+                }
+            }
+
+            // 按显示顺序排序
+            Comparator<Map<String, Object>> orderComparator = (a, b) -> {
+                BigDecimal aa = toBigDecimal(getValueIgnoreCase(a, "gzweuc003"));
+                BigDecimal bb = toBigDecimal(getValueIgnoreCase(b, "gzweuc003"));
+                return aa.compareTo(bb);
+            };
+            roots.sort(orderComparator);
+
+            JSONArray tree = new JSONArray();
+            for (Map<String, Object> root : roots) {
+                tree.add(buildMenuNode(root, childrenMap, orderComparator, new HashSet<>()));
+            }
+
+            result.set("success", true);
+            result.set("tree", tree);
+            result.set("total", rows.size());
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("error", e.getMessage());
+        }
+        return result;
+    }
+
+    private JSONObject buildMenuNode(Map<String, Object> row,
+                                     Map<String, List<Map<String, Object>>> childrenMap,
+                                     Comparator<Map<String, Object>> orderComparator,
+                                     Set<String> visited) {
+        String id = stringValueIgnoreCase(row, "gzweuc002");
+        JSONObject node = new JSONObject();
+        node.set("gzweuc001", stringValueIgnoreCase(row, "gzweuc001"));
+        node.set("gzweuc002", id);
+        node.set("gzweuc003", getValueIgnoreCase(row, "gzweuc003"));
+        node.set("gzweuc004", stringValueIgnoreCase(row, "gzweuc004"));
+
+        JSONArray children = new JSONArray();
+        if (!visited.contains(id)) {
+            visited.add(id);
+            List<Map<String, Object>> childRows = childrenMap.get(id);
+            if (childRows != null) {
+                childRows.sort(orderComparator);
+                for (Map<String, Object> child : childRows) {
+                    children.add(buildMenuNode(child, childrenMap, orderComparator, visited));
+                }
+            }
+            visited.remove(id);
+        }
+        node.set("children", children);
+        return node;
     }
 
     private String stringValueIgnoreCase(Map<String, Object> map, String key) {
