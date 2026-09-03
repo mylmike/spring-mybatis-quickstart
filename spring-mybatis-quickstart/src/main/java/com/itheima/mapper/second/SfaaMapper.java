@@ -2,15 +2,22 @@ package com.itheima.mapper.second;
 
 import com.itheima.pojo.sfaa;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.SelectProvider;
 
 import java.util.List;
+import java.util.Map;
 
 @Mapper
 public interface SfaaMapper {
 
-    @Select("select a.*, b.ooefl003 from SFAA_T a left join ooefl_t b on b.ooeflent=a.sfaaent and b.ooefl001=a.sfaa068 and b.ooefl002='zh_CN' where a.sfaaent=60 and a.sfaa022=#{orderNo}")
-    List<sfaa> listByOrderNo(@Param("orderNo") String orderNo);
+    /**
+     * 按订单号(+成本中心)查询工单
+     * 参数统一用 Map 传入（与 DsdataMapper 既有模式一致）：
+     *   orderNo  来源单号 sfaa022，可选
+     *   sfaa068  成本中心，可选
+     *   rowMax   期望行数，可选
+     */
+    @SelectProvider(type = SfaaSqlProvider.class, method = "listByOrderNo")
+    List<sfaa> listByOrderNo(Map<String, Object> params);
 
 }

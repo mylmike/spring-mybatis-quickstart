@@ -5,13 +5,7 @@ import cn.hutool.json.JSON;
 import cn.hutool.json.JSONArray;
 import cn.hutool.json.JSONObject;
 import com.itheima.mapper.primary.UserMapper;
-import com.itheima.mapper.second.PmdlMapper;
-import com.itheima.mapper.second.PmdsMapper;
-import com.itheima.mapper.second.SfaaMapper;
-import com.itheima.mapper.second.SfahucMapper;
-import com.itheima.mapper.second.SfbaMapper;
-import com.itheima.mapper.second.DsdataMapper;
-import com.itheima.mapper.second.LssdMapper;
+import com.itheima.mapper.second.*;
 import com.itheima.mapper.third.SrmDeliveryBodyMapper;
 import com.itheima.mapper.third.SrmDeliveryHeadMapper;
 import com.itheima.pojo.PmdsdtRow;
@@ -19,6 +13,7 @@ import com.itheima.pojo.SrmDeliveryBody;
 import com.itheima.pojo.WorkOrderRow;
 import com.itheima.pojo.sfaa;
 import com.itheima.pojo.sfahuc;
+import com.itheima.pojo.sfajuc;
 import com.itheima.pojo.user;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,6 +44,9 @@ public class  IndexController {
     private SfahucMapper sfahucMapper;
 
     @Autowired
+    private SfajucMapper sfajucMapper;
+
+    @Autowired
     private SfbaMapper sfbaMapper;
 
     @Autowired
@@ -69,6 +67,9 @@ public class  IndexController {
     @Autowired
     private DsdataMapper dsdataMapper;
 
+    @Autowired
+    private OrderMapper orderMapper;
+
     /**
      * 工单查询：返回单头+单身
      * 前端 POST /queryWorkOrder
@@ -82,77 +83,119 @@ public class  IndexController {
      *     "sfbaseq": "...", "sfba006": "...", "sfba023": "...", "sfba024": "...",
      *     "sfba013": "...", "sfba017": "...", "sfba025": "...", "sfba009": "...", "sfba028": "...",
      *     // ---- 限制返回行数（可选）----
-     *     "row_max": 200                           // 不传或为 0 则不限行数
+     *     "row_max": 200                           // 不传 / <=0 / 非法 时默认 200
      * }
+     * 规则：所有条件均可选；值为 null / 空串 / 纯空白 / 未传 时，视为该项条件未设置，不拼接 where。
+     *      例如 sfaastus、sfaa068 前端不传或传空串，SQL 中不会出现这两个条件（而不是 =''）。
      * 返回: { "head": [{ 单头字段..., "detail": [{ 单身字段... }] }] }
      */
     @PostMapping("/queryWorkOrder")
     public JSON queryWorkOrder(@RequestBody Map<String, Object> request) {
-        // 去掉 token，其余全部作为查询条件传入 SQL
-        request.remove("token");
-        List<WorkOrderRow> rows = sfbaMapper.queryWorkOrder(request);
-
         JSONObject result = new JSONObject();
-        JSONArray headArr = new JSONArray();
+        try {
+            System.out.println("[queryWorkOrder] 收到请求: " + new JSONObject(request).toString());
+            // 去掉 token，其余全部作为查询条件传入 SQL
+            request.remove("token");
+            List<WorkOrderRow> rows = sfbaMapper.queryWorkOrder(request);
 
-        // 按 sfaadocno 分组
-        Map<String, JSONObject> headMap = new LinkedHashMap<>();
+            JSONArray headArr = new JSONArray();
 
-        for (WorkOrderRow row : rows) {
-            String docno = row.getSfaadocno();
-            JSONObject head = headMap.get(docno);
-            if (head == null) {
-                head = new JSONObject();
-                head.set("sfbaent", row.getSfbaent());
-                head.set("sfaasite", row.getSfaasite());
-                head.set("sfaadocno", row.getSfaadocno());
-                head.set("sfaastus", row.getSfaastus());
-                head.set("sfaa010", row.getSfaa010());
-                head.set("sfaa012", row.getSfaa012());
-                head.set("sfaa068", row.getSfaa068());
-                head.set("sfaadocdt", row.getSfaadocdt());
-                head.set("sfaa019", row.getSfaa019());
-                head.set("sfaa020", row.getSfaa020());
-                head.set("sfaa022", row.getSfaa022());
-                head.set("sfaa023", row.getSfaa023());
-                head.set("sfaa050", row.getSfaa050());
-                head.set("sfaa047", row.getSfaa047());
-                head.set("detail", new JSONArray());
-                headMap.put(docno, head);
-                headArr.add(head);
+            // 按 sfaadocno 分组
+            Map<String, JSONObject> headMap = new LinkedHashMap<>();
+
+            for (WorkOrderRow row : rows) {
+                String docno = row.getSfaadocno();
+                JSONObject head = headMap.get(docno);
+                if (head == null) {
+                    head = new JSONObject();
+                    head.set("sfbaent", row.getSfbaent());
+                    head.set("sfaasite", row.getSfaasite());
+                    head.set("sfaadocno", row.getSfaadocno());
+                    head.set("sfaastus", row.getSfaastus());
+                    head.set("sfaa010", row.getSfaa010());
+                    head.set("sfaa012", row.getSfaa012());
+                    head.set("sfaa068", row.getSfaa068());
+                    head.set("sfaadocdt", row.getSfaadocdt());
+                    head.set("sfaa019", row.getSfaa019());
+                    head.set("sfaa020", row.getSfaa020());
+                    head.set("sfaa022", row.getSfaa022());
+                    head.set("sfaa023", row.getSfaa023());
+                    head.set("sfaa050", row.getSfaa050());
+                    head.set("sfaa047", row.getSfaa047());
+                    head.set("detail", new JSONArray());
+                    headMap.put(docno, head);
+                    headArr.add(head);
+                }
+
+                JSONObject detail = new JSONObject();
+                detail.set("sfbaseq", row.getSfbaseq());
+                detail.set("sfba006", row.getSfba006());
+                detail.set("sfba023", row.getSfba023());
+                detail.set("sfba024", row.getSfba024());
+                detail.set("sfba013", row.getSfba013());
+                detail.set("sfba017", row.getSfba017());
+                detail.set("sfba025", row.getSfba025());
+                detail.set("sfba009", row.getSfba009());
+                detail.set("sfba028", row.getSfba028());
+
+                ((JSONArray) head.get("detail")).add(detail);
             }
 
-            JSONObject detail = new JSONObject();
-            detail.set("sfbaseq", row.getSfbaseq());
-            detail.set("sfba006", row.getSfba006());
-            detail.set("sfba023", row.getSfba023());
-            detail.set("sfba024", row.getSfba024());
-            detail.set("sfba013", row.getSfba013());
-            detail.set("sfba017", row.getSfba017());
-            detail.set("sfba025", row.getSfba025());
-            detail.set("sfba009", row.getSfba009());
-            detail.set("sfba028", row.getSfba028());
-
-            ((JSONArray) head.get("detail")).add(detail);
+            result.set("success", true);
+            result.set("head", headArr);
+            result.set("total", headArr.size());
+        } catch (Exception e) {
+            System.err.println("[queryWorkOrder] 异常: " + e.getMessage());
+            e.printStackTrace();
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
         }
-
-        result.set("head", headArr);
         return result;
     }
 
     /**
-     * 根据单号查询 sfahuc_t 明细
+     * 根据条件查询 sfahuc_t 明细
      * 前端 POST /querySfahuc
-     * 请求体 JSON: { "sfahucdocno": "单号" }
+     * 请求体 JSON 示例：
+     * {
+     *     "token": "xxx",
+     *     "sfahucent": "60",          // 账套，可选，默认 60（始终作为条件）
+     *     "sfahucsite": "NBYL",       // 营运据点，可选，默认 NBYL（始终作为条件）
+     *     "sfahucdocno": "单号",       // 可选
+     *     "sfahuc008": "成本中心",      // 可选
+     *     "sfahuc004": "订单号",        // 可选
+     *     "sfahuc005": "订单序号",      // 可选
+     *     "sfahuc001": "工单号"         // 可选
+     * }
+     * 规则：
+     *   1. 账套 sfahucent（默认 60）、营运据点 sfahucsite（默认 NBYL）为固定条件，始终拼接；前端传了则用前端的值
+     *   2. 其余条件（sfahucdocno / sfahuc008 / sfahuc004 / sfahuc005 / sfahuc001）
+     *      值为 null / 空串 / 纯空白 / 未传 时，视为该项条件未设置，不拼接 where（而不是 =''）
      * 返回: { "master": [{ sfahucent, sfahucsite, sfahucdocno, sfahucseq, ... }] }
      */
     @PostMapping("/querySfahuc")
     public JSON querySfahuc(@RequestBody Map<String, Object> request) {
-        String sfahucdocno = (String) request.get("sfahucdocno");
         JSONObject result = new JSONObject();
         JSONArray master = new JSONArray();
 
-        List<sfahuc> sfahucList = sfahucMapper.listByDocno(sfahucdocno);
+        // 固定条件：账套、营运据点，前端不传则用默认值
+        String sfahucent = getString(request, "sfahucent");
+        if (isBlank(sfahucent)) sfahucent = "60";
+        String sfahucsite = getString(request, "sfahucsite");
+        if (isBlank(sfahucsite)) sfahucsite = "NBYL";
+
+        Map<String, Object> params = new HashMap<>();
+        params.put("sfahucent", sfahucent);
+        params.put("sfahucsite", sfahucsite);
+        // 可选条件：只把有效的传入 SQL，其余不拼接
+        putIfNotBlank(params, request, "sfahucdocno");
+        putIfNotBlank(params, request, "sfahuc008");
+        putIfNotBlank(params, request, "sfahuc004");
+        putIfNotBlank(params, request, "sfahuc005");
+        putIfNotBlank(params, request, "sfahuc001");
+
+        List<sfahuc> sfahucList = sfahucMapper.listByDocno(params);
         for (sfahuc h : sfahucList) {
             JSONObject item = new JSONObject();
             item.set("sfahucent", h.getSfahucent());
@@ -201,115 +244,319 @@ public class  IndexController {
 }
 
     /**
-     * 根据订单号查询 sfaa
+     * 按可选条件查询工单（sfaa_t）
      * 前端 POST /queryOrder
-     * 请求体 JSON: { "orderNo": "订单号" }
-     * 返回: { "master": [{ sfaadocno, sfaa010, ... }] }
+     * 请求体 JSON 示例：
+     * {
+     *     "token": "xxx",
+     *     "sfaaent": "60",          // 可选，账套，默认 60（始终作为条件）
+     *     "sfaasite": "NBYL",       // 可选，营运据点，默认 NBYL（始终作为条件）
+     *     "orderNo": "订单号",       // 可选，来源单号 sfaa022
+     *     "sfaa023": "来源序号",      // 可选
+     *     "sfaa068": "成本中心",      // 可选
+     *     "sfaadocno": "工单号",      // 可选
+     *     "sfaa010": "生产料号",      // 可选
+     *     "rowMax": 500             // 可选，最多 1000
+     * }
+     * 规则：
+     *   固定条件（始终拼接）：sfaaent(默认60)、sfaasite(默认NBYL)、sfaastus='F'（只查已发放工单）
+     *   其余条件为 null / 空串 / 纯空白 / 未传 时，视为不设置该条件，不拼接 where
+     *   rowMax 可选，期望返回行数；最多返回 1000 条（不传/<=0 取 1000，超过 1000 截断为 1000）
+     * 返回: { "master": [{ sfaadocno, sfaa010, ... }], "total": n, "truncated": true/false }
+     *   truncated=true 表示结果已被截断到上限
+     *   master 每项含：sfaastus(工单状态码)、sfaa050(入库合格数量)、
+     *                 余量 = sfaa012(生产数量) - sfaa050（空值按 0 处理）
      */
     @PostMapping("/queryOrder")
     public JSON queryOrder(@RequestBody Map<String, Object> request) {
+        // 固定条件：账套、营运据点，前端不传则用默认值
+        String sfaaent = getString(request, "sfaaent");
+        if (isBlank(sfaaent)) sfaaent = "60";
+        String sfaasite = getString(request, "sfaasite");
+        if (isBlank(sfaasite)) sfaasite = "NBYL";
         String orderNo = (String) request.get("orderNo");
+        String sfaa023 = getString(request, "sfaa023");
+        String sfaa068 = (String) request.get("sfaa068");
+        String sfaadocno = (String) request.get("sfaadocno");
+        String sfaa010 = (String) request.get("sfaa010");
+        // 期望行数：不传或非法传 0，由 Provider 兜底为上限 1000
+        int rowMax = 0;
+        Object rowMaxObj = request.get("rowMax");
+        if (rowMaxObj != null) {
+            try {
+                rowMax = Integer.parseInt(String.valueOf(rowMaxObj).trim());
+            } catch (NumberFormatException ignore) {
+                rowMax = 0;
+            }
+        }
         JSONObject result = new JSONObject();
         JSONArray master = new JSONArray();
 
-        List<sfaa> sfaaList = sfaaMapper.listByOrderNo(orderNo);
-        for (sfaa s : sfaaList) {
-            JSONObject item = new JSONObject();
-            item.set("sfaadocno", s.getSfaadocno());
-            item.set("sfaa010", s.getSfaa010());
-            item.set("sfaa012", s.getSfaa012());
-            item.set("sfaa019", s.getSfaa019());
-            item.set("sfaa020", s.getSfaa020());
-            item.set("sfaa021", s.getSfaa021());
-            item.set("sfaa022", s.getSfaa022());
-            item.set("sfaa023", s.getSfaa023());
-            item.set("sfaa068", s.getSfaa068());
-            item.set("ooefl003", s.getOoefl003());
-            master.add(item);
+        // 参数统一用 Map 传入 Mapper
+        Map<String, Object> params = new HashMap<>();
+        params.put("sfaaent", sfaaent);
+        params.put("sfaasite", sfaasite);
+        params.put("orderNo", orderNo);
+        params.put("sfaa023", sfaa023);
+        params.put("sfaa068", sfaa068);
+        params.put("sfaadocno", sfaadocno);
+        params.put("sfaa010", sfaa010);
+        params.put("rowMax", rowMax);
+
+        try {
+            List<sfaa> sfaaList = sfaaMapper.listByOrderNo(params);
+            for (sfaa s : sfaaList) {
+                JSONObject item = new JSONObject();
+                item.set("sfaadocno", s.getSfaadocno());
+                item.set("sfaastus", s.getSfaastus());
+                item.set("sfaa010", s.getSfaa010());
+                item.set("sfaa012", s.getSfaa012());
+                item.set("sfaa019", s.getSfaa019());
+                item.set("sfaa020", s.getSfaa020());
+                item.set("sfaa021", s.getSfaa021());
+                item.set("sfaa022", s.getSfaa022());
+                item.set("sfaa023", s.getSfaa023());
+                item.set("sfaa068", s.getSfaa068());
+                item.set("sfaa050", s.getSfaa050());
+                // 余量 = 生产数量(sfaa012) - 入库合格数量(sfaa050)，空值按 0 处理
+                BigDecimal produceQty = toBigDecimal(s.getSfaa012());
+                BigDecimal qualifiedQty = toBigDecimal(s.getSfaa050());
+                item.set("余量", produceQty.subtract(qualifiedQty));
+                item.set("ooefl003", s.getOoefl003());
+                master.add(item);
+            }
+            result.set("success", true);
+        } catch (Exception e) {
+            // 把 SQL 异常暴露出来，避免前端只看到空数据却不知道原因
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
         }
 
-
+        // 硬上限
+        final int MAX_ROWS = 1000;
+        int effectiveMax = rowMax <= 0 ? MAX_ROWS : Math.min(rowMax, MAX_ROWS);
+        result.set("total", master.size());
+        result.set("limit", effectiveMax);
+        result.set("truncated", master.size() >= effectiveMax);
         result.set("master", master);
+        return result;
+    }
+
+    /**
+     * 订单未交货查询清单（用于前端下拉框绑定）
+     * 基于 xmdd_t / xmdc_t / xmda_t，返回未交货订单明细行
+     * 返回：{ success, list: [{ docno, seq, item, undeliveredQty, customer, docDate }], total }
+     */
+    @PostMapping("/queryUndeliveredOrders")
+    public JSONObject queryUndeliveredOrders(@RequestBody Map<String, Object> request) {
+        JSONObject result = new JSONObject();
+        try {
+            java.util.Map<String, Object> p = new java.util.HashMap<>();
+            List<Map<String, Object>> rows = orderMapper.queryUndeliveredOrders(p);
+
+            JSONArray list = new JSONArray();
+            for (Map<String, Object> row : rows) {
+                JSONObject opt = new JSONObject();
+                opt.set("docno", stringValueIgnoreCase(row, "docno"));
+                opt.set("seq", stringValueIgnoreCase(row, "seq"));
+                opt.set("item", stringValueIgnoreCase(row, "item"));
+                opt.set("undeliveredQty", getValueIgnoreCase(row, "undeliveredQty"));
+                opt.set("customer", stringValueIgnoreCase(row, "customer"));
+                opt.set("docDate", stringValueIgnoreCase(row, "docDate"));
+                // 下拉框展示用
+                opt.set("value", stringValueIgnoreCase(row, "docno"));
+                String label = stringValueIgnoreCase(row, "docno");
+                String cust = stringValueIgnoreCase(row, "customer");
+                if (!isBlank(cust)) {
+                    label = label + " - " + cust;
+                }
+                opt.set("label", label);
+                list.add(opt);
+            }
+
+            result.set("success", true);
+            result.set("list", list);
+            result.set("total", list.size());
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("error", e.getMessage());
+        }
         return result;
     }
 
     /**
      * 保存/更新 sfahuc_t 数据
      * 前端 POST /saveSfahuc
-     * 请求体 JSON: { "list": [{ sfahucent, sfahucsite, sfahucdocno, sfahucseq, sfahuc001 ... }] }
-     * 返回: { "success": true, "insertCount": x, "updateCount": y }
+     * 请求体 JSON 示例：
+     * {
+     *     "token": "xxx",
+     *     "list": [
+     *         {
+     *             "sfahucent": "60",        // 可选，默认 60
+     *             "sfahucsite": "NBYL",     // 可选，默认 NBYL
+     *             "sfahuc001": "工单号",      // 必填，判重关键字（表主键）
+     *             "sfahuc002": "品号",        // 必填，判重关键字（表主键）
+     *             "sfahucdocno": "单号",     // 可选
+     *             "sfahucseq": "1",        // 可选
+     *             "sfahuc003": "数量", "sfahuc004": "订单号",
+     *             "sfahuc005": "订单序号", "sfahuc006": "2026-09-02", "sfahuc007": "2026-09-20",
+     *             "sfahuc008": "成本中心", "sfahuc009": "...", "sfahuc010": "五金组"
+     *         }
+     *     ]
+     * }
+     * 判重条件（= 表主键，4 字段）：sfahucent(默认60) + sfahucsite(默认NBYL)
+     *                              + sfahuc001(工单号) + sfahuc002(品号)
+     *   四者相同 → 更新该行（where 用主键四列，set 不改主键字段，可改 docno/seq/其它列）
+     *   不存在 → 插入新行
+     *
+     *   一个工单号(sfahuc001) 可对应多个品号(sfahuc002)，每个品号组合都是独立行
+     *   注意：update 的 set 中【不修改】主键四列（sfahucent/site/001/002），否则会把多行撞成同一主键 ORA-00001
+     * 返回: { "success": true, "insertCount": x, "updateCount": y, "skipCount": z }
      */
     @PostMapping("/saveSfahuc")
     public JSON saveSfahuc(@RequestBody Map<String, Object> request) {
-        List<Map<String, Object>> list = (List<Map<String, Object>>) request.get("list");
         JSONObject result = new JSONObject();
         int insertCount = 0;
         int updateCount = 0;
+        int skipCount = 0;
 
-        if (list != null) {
-            for (Map<String, Object> item : list) {
-                sfahuc record = new sfahuc();
-                record.setSfahucent(getString(item, "sfahucent"));
-                record.setSfahucsite(getString(item, "sfahucsite"));
-                record.setSfahucdocno(getString(item, "sfahucdocno"));
-                record.setSfahucseq(getString(item, "sfahucseq"));
-                record.setSfahuc001(getString(item, "sfahuc001"));
-                record.setSfahuc002(getString(item, "sfahuc002"));
-                record.setSfahuc003(getString(item, "sfahuc003"));
-                record.setSfahuc004(getString(item, "sfahuc004"));
-                record.setSfahuc005(getString(item, "sfahuc005"));
-                record.setSfahuc006(getString(item, "sfahuc006"));
-                record.setSfahuc007(getString(item, "sfahuc007"));
-                record.setSfahuc008(getString(item, "sfahuc008"));
-                record.setSfahuc009(getString(item, "sfahuc009"));
+        try {
+            List<Map<String, Object>> list = (List<Map<String, Object>>) request.get("list");
 
-                List<sfahuc> existingList = sfahucMapper.findByDocnoAndSeq(
-                        record.getSfahucdocno(), record.getSfahucseq());
+            if (list != null) {
+                for (Map<String, Object> item : list) {
+                    // 判重关键字（= 表主键）：账套、据点取默认值；工单号、品号必填
+                    String sfahucent = getString(item, "sfahucent");
+                    if (isBlank(sfahucent)) sfahucent = "60";
+                    String sfahucsite = getString(item, "sfahucsite");
+                    if (isBlank(sfahucsite)) sfahucsite = "NBYL";
+                    String sfahuc001 = getString(item, "sfahuc001");
+                    String sfahuc002 = getString(item, "sfahuc002");
 
-                if (existingList == null || existingList.isEmpty()) {
-                    sfahucMapper.insert(record);
-                    insertCount++;
-                } else {
-                    sfahucMapper.update(record);
-                    updateCount++;
+                    // 工单号、品号为表主键，必填
+                    if (isBlank(sfahuc001) || isBlank(sfahuc002)) {
+                        System.out.println("[saveSfahuc] 跳过本条：sfahuc001/sfahuc002 为空（主键必填）");
+                        skipCount++;
+                        continue;
+                    }
+
+                    sfahuc record = new sfahuc();
+                    record.setSfahucent(sfahucent);
+                    record.setSfahucsite(sfahucsite);
+                    record.setSfahuc001(sfahuc001);
+                    record.setSfahuc002(sfahuc002);
+                    record.setSfahucdocno(getString(item, "sfahucdocno"));
+                    record.setSfahucseq(getString(item, "sfahucseq"));
+                    record.setSfahuc003(getString(item, "sfahuc003"));
+                    record.setSfahuc004(getString(item, "sfahuc004"));
+                    record.setSfahuc005(getString(item, "sfahuc005"));
+                    record.setSfahuc006(getString(item, "sfahuc006"));
+                    record.setSfahuc007(getString(item, "sfahuc007"));
+                    record.setSfahuc008(getString(item, "sfahuc008"));
+                    record.setSfahuc009(getString(item, "sfahuc009"));
+                    record.setSfahuc010(getString(item, "sfahuc010"));
+
+                    // 按新主键判重：账套+据点+工单号+品号
+                    List<sfahuc> existingList = sfahucMapper.findByEntSiteDocno(
+                            sfahucent, sfahucsite, sfahuc001, sfahuc002);
+
+                    if (existingList == null || existingList.isEmpty()) {
+                        sfahucMapper.insert(record);
+                        insertCount++;
+                    } else {
+                        // 更新时 where 主键四列，set 不改主键字段，可改 docno/seq/其它列
+                        sfahucMapper.updateByPk(record);
+                        updateCount++;
+                    }
                 }
             }
-        }
 
-        result.set("success", true);
-        result.set("insertCount", insertCount);
-        result.set("updateCount", updateCount);
+            result.set("success", true);
+            result.set("insertCount", insertCount);
+            result.set("updateCount", updateCount);
+            result.set("skipCount", skipCount);
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
+        }
         return result;
     }
 
     /**
-     * 删除 sfahuc_t 记录
+     * 删除 sfahuc_t 记录，并同步删除 sfajuc_t 中对应工单号的日计划记录
      * 前端 POST /deleteSfahuc
-     * 请求体 JSON: { "sfahucent", "sfahucsite", "sfahucdocno", "sfahucseq", "sfahuc001", "sfahuc002" }
-     * 返回: { "success": true, "deleted": true/false }
+     * 请求体 JSON 示例：
+     * {
+     *     "token": "xxx",
+     *     "sfahucent": "60",        // 可选，默认 60
+     *     "sfahucsite": "NBYL",     // 可选，默认 NBYL
+     *     "sfahuc001": "...",       // 必填，工单号
+     *     "sfahuc002": "...",       // 必填
+     *     "sfahuc008": "成本中心"     // 可选，有值才作为条件
+     * }
+     * 删除条件：账套 + 据点 + sfahuc001 + sfahuc002 [+ 成本中心 sfahuc008]
+     * 同步删除 sfajuc_t：sfajucent=sfahucent and sfajucsite=sfahucsite and sfajuc001=sfahuc001
+     *   （仅当 sfahuc_t 实际删到记录时才执行，避免误删日计划）
+     * 返回: { success, deletedCount, sfajucDeletedCount, deleted, condition }
      */
     @PostMapping("/deleteSfahuc")
     public JSON deleteSfahuc(@RequestBody Map<String, Object> request) {
-        String sfahucent = getString(request, "sfahucent");
-        String sfahucsite = getString(request, "sfahucsite");
-        String sfahucdocno = getString(request, "sfahucdocno");
-        String sfahucseq = getString(request, "sfahucseq");
-        String sfahuc001 = getString(request, "sfahuc001");
-        String sfahuc002 = getString(request, "sfahuc002");
-
-        int rows = sfahucMapper.deleteByKey(sfahucent, sfahucsite, sfahucdocno, sfahucseq, sfahuc001, sfahuc002);
-
         JSONObject result = new JSONObject();
-        result.set("success", true);
-        result.set("deleted", rows > 0);
-        JSONObject condition = new JSONObject();
-        condition.set("sfahucent", sfahucent);
-        condition.set("sfahucsite", sfahucsite);
-        condition.set("sfahucdocno", sfahucdocno);
-        condition.set("sfahucseq", sfahucseq);
-        condition.set("sfahuc001", sfahuc001);
-        condition.set("sfahuc002", sfahuc002);
-        result.set("condition", condition);
+        try {
+            String sfahucent = getString(request, "sfahucent");
+            if (isBlank(sfahucent)) sfahucent = "60";
+            String sfahucsite = getString(request, "sfahucsite");
+            if (isBlank(sfahucsite)) sfahucsite = "NBYL";
+            String sfahuc001 = getString(request, "sfahuc001");
+            String sfahuc002 = getString(request, "sfahuc002");
+            String sfahuc008 = getString(request, "sfahuc008");
+
+            // 必填校验
+            if (isBlank(sfahuc001) || isBlank(sfahuc002)) {
+                result.set("success", false);
+                result.set("message", "sfahuc001 和 sfahuc002 为必填");
+                return result;
+            }
+
+            Map<String, Object> params = new HashMap<>();
+            params.put("sfahucent", sfahucent);
+            params.put("sfahucsite", sfahucsite);
+            params.put("sfahuc001", sfahuc001);
+            params.put("sfahuc002", sfahuc002);
+            if (!isBlank(sfahuc008)) {
+                params.put("sfahuc008", sfahuc008);
+            }
+
+            int deletedCount = sfahucMapper.deleteByKey(params);
+
+            // 同步删除 sfajuc_t 中该工单号的日计划（仅当主表确实删到记录）
+            int sfajucDeletedCount = 0;
+            if (deletedCount > 0) {
+                sfajucDeletedCount = sfajucMapper.deleteByDocno(sfahucent, sfahucsite, sfahuc001);
+            }
+
+            result.set("success", true);
+            result.set("deletedCount", deletedCount);
+            result.set("sfajucDeletedCount", sfajucDeletedCount);
+            result.set("deleted", deletedCount > 0);
+
+            JSONObject condition = new JSONObject();
+            condition.set("sfahucent", sfahucent);
+            condition.set("sfahucsite", sfahucsite);
+            condition.set("sfahuc001", sfahuc001);
+            condition.set("sfahuc002", sfahuc002);
+            condition.set("sfahuc008", sfahuc008);
+            result.set("condition", condition);
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
+        }
         return result;
     }
 
@@ -1872,9 +2119,276 @@ public class  IndexController {
         return val == null ? "" : String.valueOf(val);
     }
 
+    /**
+     * 保存/更新 sfajuc_t 日计划表
+     * 前端 POST /saveSfajucDailyPlan
+     * 请求体 JSON 示例：
+     * {
+     *     "list": [
+     *         {
+     *             "sfajucent": "60",        // 企业代码，默认 60
+     *             "sfajucsite": "NBYL",       // 营运据点，默认 NBYL
+     *             "sfajuc001": "WO-001",      // 工单号
+     *             "sfajuc004": "LINE-A",      // 产线
+     *             "sfajuc007": "2026-08-31",  // 排产日期（YYYY-MM-DD）
+     *             "sfajuc003": "100.00"       // 数量
+     *         },
+     *         ...
+     *     ]
+     * }
+     * 逻辑：按 账套+据点+工单号+产线+日期 作为关键字；
+     *      不存在则插入，存在但数量不同则更新，数量相同则跳过。
+     * 返回: { "success": true, "insertCount": x, "updateCount": y, "skipCount": z }
+     */
+    @PostMapping("/saveSfajucDailyPlan")
+    public JSONObject saveSfajucDailyPlan(@RequestBody Map<String, Object> request) {
+        JSONObject result = new JSONObject();
+        int insertCount = 0;
+        int updateCount = 0;
+        int skipCount = 0;
+
+        try {
+            System.out.println("[saveSfajucDailyPlan] ==== 收到请求 ====");
+            System.out.println("[saveSfajucDailyPlan] 顶层keys=" + request.keySet());
+            System.out.println("[saveSfajucDailyPlan] 完整请求体=" + new JSONObject(request).toString());
+
+            List<Map<String, Object>> list;
+            if (request.containsKey("list")) {
+                list = (List<Map<String, Object>>) request.get("list");
+            } else if (request.containsKey("data")) {
+                list = new ArrayList<>();
+                list.add((Map<String, Object>) request.get("data"));
+            } else {
+                list = new ArrayList<>();
+                list.add(request);
+            }
+
+            int receivedCount = (list == null) ? 0 : list.size();
+            System.out.println("[saveSfajucDailyPlan] list条数=" + receivedCount);
+
+            if (list != null) {
+                for (Map<String, Object> item : list) {
+                    System.out.println("[saveSfajucDailyPlan] 本条keys=" + item.keySet());
+                    String sfajucent = getString(item, "sfajucent");
+                    if (isBlank(sfajucent)) sfajucent = "60";
+                    String sfajucsite = getString(item, "sfajucsite");
+                    if (isBlank(sfajucsite)) sfajucsite = "NBYL";
+                    String sfajuc001 = getString(item, "sfajuc001");
+                    // 产线：主读 sfajuc004，兼容旧键名 sfajuc008
+                    String sfajuc004 = getStringAny(item, "sfajuc004", "sfajuc008");
+                    String sfajuc007 = getString(item, "sfajuc007");
+                    String sfajuc003 = getString(item, "sfajuc003");
+
+                    if (isBlank(sfajuc001) || isBlank(sfajuc004) || isBlank(sfajuc007)) {
+                        System.out.println("[saveSfajucDailyPlan] !!!跳过本条,必填字段为空. ent=" + sfajucent
+                                + ", site=" + sfajucsite + ", sfajuc001=" + sfajuc001
+                                + ", sfajuc004=" + sfajuc004 + ", sfajuc007=" + sfajuc007);
+                        continue;
+                    }
+
+                    List<sfajuc> existingList = sfajucMapper.findByKey(
+                            sfajucent, sfajucsite, sfajuc001, sfajuc004, sfajuc007);
+                    System.out.println("[saveSfajucDailyPlan] 查重结果条数=" + (existingList == null ? 0 : existingList.size()));
+
+                    sfajuc record = new sfajuc();
+                    record.setSfajucent(sfajucent);
+                    record.setSfajucsite(sfajucsite);
+                    record.setSfajuc001(sfajuc001);
+                    record.setSfajuc004(sfajuc004);
+                    record.setSfajuc007(sfajuc007);
+                    record.setSfajuc003(isBlank(sfajuc003) ? "0" : sfajuc003);
+
+                    if (existingList == null || existingList.isEmpty()) {
+                        sfajucMapper.insert(record);
+                        insertCount++;
+                        System.out.println("[saveSfajucDailyPlan] inserted. key="
+                                + sfajucent + "|" + sfajucsite + "|" + sfajuc001 + "|" + sfajuc004 + "|" + sfajuc007);
+                    } else {
+                        sfajuc existing = existingList.get(0);
+                        BigDecimal newQty = toBigDecimal(record.getSfajuc003());
+                        BigDecimal oldQty = toBigDecimal(existing.getSfajuc003());
+                        if (newQty.compareTo(oldQty) != 0) {
+                            sfajucMapper.update(record);
+                            updateCount++;
+                            System.out.println("[saveSfajucDailyPlan] updated. oldQty=" + oldQty + ", newQty=" + newQty);
+                        } else {
+                            skipCount++;
+                            System.out.println("[saveSfajucDailyPlan] skipped. qty=" + newQty);
+                        }
+                    }
+                }
+            }
+
+            result.set("success", true);
+            result.set("receivedCount", receivedCount);
+            result.set("insertCount", insertCount);
+            result.set("updateCount", updateCount);
+            result.set("skipCount", skipCount);
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    /**
+     * 查询 sfajuc_t 日计划数量
+     * 前端 POST /querySfajucDailyPlan
+     * 请求体 JSON 示例：
+     * {
+     *     "sfajucent": "60",        // 可选，默认 60
+     *     "sfajucsite": "NBYL",       // 可选，默认 NBYL
+     *     "sfajuc001": "WO-001",      // 工单号
+     *     "sfajuc004": "LINE-A",      // 产线
+     *     "sfajuc007": "2026-08-31"   // 排产日期（YYYY-MM-DD）
+     * }
+     * 返回: { "success": true, "master": [{ sfajucent, sfajucsite, sfajuc001, sfajuc004, sfajuc007, sfajuc003, 数量 }], "total": n }
+     */
+    @PostMapping("/querySfajucDailyPlan")
+    public JSONObject querySfajucDailyPlan(@RequestBody Map<String, Object> request) {
+        JSONObject result = new JSONObject();
+        try {
+            String sfajucent = getString(request, "sfajucent");
+            if (isBlank(sfajucent)) sfajucent = "60";
+            String sfajucsite = getString(request, "sfajucsite");
+            if (isBlank(sfajucsite)) sfajucsite = "NBYL";
+            String sfajuc001 = getString(request, "sfajuc001");
+            String sfajuc004 = getString(request, "sfajuc004");
+            String sfajuc007 = getString(request, "sfajuc007");
+
+            if (isBlank(sfajuc001) || isBlank(sfajuc004) || isBlank(sfajuc007)) {
+                result.set("success", false);
+                result.set("message", "工单号、产线、日期不能为空");
+                return result;
+            }
+
+            List<sfajuc> list = sfajucMapper.findByKey(
+                    sfajucent, sfajucsite, sfajuc001, sfajuc004, sfajuc007);
+
+            JSONArray master = new JSONArray();
+            if (list != null) {
+                for (sfajuc row : list) {
+                    JSONObject item = new JSONObject();
+                    item.set("sfajucent", row.getSfajucent());
+                    item.set("sfajucsite", row.getSfajucsite());
+                    item.set("sfajuc001", row.getSfajuc001());
+                    item.set("sfajuc004", row.getSfajuc004());
+                    item.set("sfajuc007", row.getSfajuc007());
+                    item.set("sfajuc003", row.getSfajuc003());
+                    // 数量：与 sfajuc003 同值，空则补 0，方便前端直接绑定
+                    item.set("数量", row.getSfajuc003() == null ? BigDecimal.ZERO : toBigDecimal(row.getSfajuc003()));
+                    master.add(item);
+                }
+            }
+
+            result.set("success", true);
+            result.set("master", master);
+            result.set("total", master.size());
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
+        }
+        return result;
+    }
+
     private String getString(Map<String, Object> map, String key) {
         Object val = map.get(key);
         return val == null ? null : String.valueOf(val);
+    }
+
+    /** 依次尝试多个键名，返回第一个非空值（用于兼容新旧字段名） */
+    private String getStringAny(Map<String, Object> map, String... keys) {
+        for (String key : keys) {
+            String val = getString(map, key);
+            if (!isBlank(val)) {
+                return val;
+            }
+        }
+        return null;
+    }
+
+    /** 仅当源 Map 中该键有有效值（非 null / 非空串 / 非纯空白）时，才放入目标 Map */
+    private void putIfNotBlank(Map<String, Object> target, Map<String, Object> source, String key) {
+        Object val = source.get(key);
+        if (isBlank(val)) {
+            return;
+        }
+        target.put(key, val instanceof String ? ((String) val).trim() : val);
+    }
+
+    /**
+     * 查询品号基础信息（imae_t）
+     * 前端 POST /queryItemBasicInfo
+     * 请求体 JSON 示例：
+     * {
+     *     "token": "xxx",
+     *     "imaeent": "60",        // 可选，默认 60
+     *     "imaesite": "NBYL",     // 可选，默认 NBYL
+     *     "imae001": "品号"        // 必填
+     * }
+     * 返回字段：
+     *   imae051 / 标准工时  - 标准工时
+     *   UPPH               - 1小时产量 = 3600 / 标准工时（保留2位小数）
+     *                        标准工时为 0 或 NULL 时 UPPH = 0
+     * 返回: { "success": true, "data": [{ imae051, 标准工时, UPPH }], "total": n }
+     */
+    @PostMapping("/queryItemBasicInfo")
+    public JSONObject queryItemBasicInfo(@RequestBody Map<String, Object> request) {
+        JSONObject result = new JSONObject();
+        try {
+            String imaeent = getString(request, "imaeent");
+            if (isBlank(imaeent)) imaeent = "60";
+            String imaesite = getString(request, "imaesite");
+            if (isBlank(imaesite)) imaesite = "NBYL";
+            String imae001 = getString(request, "imae001");
+
+            if (isBlank(imae001)) {
+                result.set("success", false);
+                result.set("message", "imae001(品号)不能为空");
+                return result;
+            }
+
+            List<Map<String, Object>> rows = dsdataMapper.findImae051(imaeent, imaesite, imae001);
+
+            JSONArray data = new JSONArray();
+            if (rows != null) {
+                for (Map<String, Object> row : rows) {
+                    JSONObject item = new JSONObject();
+                    for (Map.Entry<String, Object> entry : row.entrySet()) {
+                        item.set(entry.getKey().toLowerCase(), entry.getValue());
+                    }
+                    // 标准工时
+                    Object stdHourObj = getValueIgnoreCase(row, "imae051");
+                    item.set("标准工时", stdHourObj);
+
+                    // UPPH = 3600 / 标准工时，标准工时为 0 或 NULL 时为 0，保留2位小数
+                    BigDecimal stdHour = toBigDecimal(stdHourObj);
+                    BigDecimal upph = BigDecimal.ZERO;
+                    if (stdHour.compareTo(BigDecimal.ZERO) != 0) {
+                        upph = new BigDecimal("3600")
+                                .divide(stdHour, 2, RoundingMode.HALF_UP);
+                    }
+                    item.set("UPPH", upph);
+                    item.set("upph", upph);
+
+                    data.add(item);
+                }
+            }
+
+            result.set("success", true);
+            result.set("data", data);
+            result.set("total", data.size());
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
+        }
+        return result;
     }
 
 }

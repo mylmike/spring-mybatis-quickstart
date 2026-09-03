@@ -4,6 +4,7 @@ import org.apache.ibatis.annotations.DeleteProvider;
 import org.apache.ibatis.annotations.InsertProvider;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.SelectProvider;
 import org.apache.ibatis.annotations.UpdateProvider;
 
@@ -143,5 +144,18 @@ public interface DsdataMapper {
      */
     @SelectProvider(type = GzweucSqlProvider.class, method = "queryMenuTree")
     List<Map<String, Object>> queryMenuTree(Map<String, Object> params);
+
+    /**
+     * 查询品号基础信息（imae_t）
+     * 当前仅取标准工时 imae051，后续有需求可直接扩展 SELECT 字段
+     * imaeent 数值型（默认 60），imaesite 字符型（默认 NBYL），imae001 为品号
+     */
+    @Select("select imae051 from imae_t " +
+            "where imaeent = #{imaeent} " +
+            "and imaesite = #{imaesite} " +
+            "and imae001 = #{imae001}")
+    List<Map<String, Object>> findImae051(@Param("imaeent") String imaeent,
+                                          @Param("imaesite") String imaesite,
+                                          @Param("imae001") String imae001);
 
 }
