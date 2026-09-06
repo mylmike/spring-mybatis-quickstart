@@ -9,6 +9,8 @@ public class sfaa {
     private String sfaa021;
     private String sfaa022;
     private String sfaa023;
+    private String sfaa050;
+    private String sfaastus;
 
     public String getSfaadocno() { return sfaadocno; }
     public void setSfaadocno(String sfaadocno) { this.sfaadocno = sfaadocno; }
@@ -33,6 +35,12 @@ public class sfaa {
 
     public String getSfaa023() { return sfaa023; }
     public void setSfaa023(String sfaa023) { this.sfaa023 = sfaa023; }
+
+    public String getSfaa050() { return sfaa050; }
+    public void setSfaa050(String sfaa050) { this.sfaa050 = sfaa050; }
+
+    public String getSfaastus() { return sfaastus; }
+    public void setSfaastus(String sfaastus) { this.sfaastus = sfaastus; }
 
     private String sfaa068;
     public String getSfaa068() { return sfaa068; }

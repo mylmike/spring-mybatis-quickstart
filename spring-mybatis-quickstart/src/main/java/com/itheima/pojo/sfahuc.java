@@ -14,6 +14,7 @@ public class sfahuc {
     private String sfahuc007;
     private String sfahuc008;
     private String sfahuc009;
+    private String sfahuc010;
 
     public String getSfahucent() { return sfahucent; }
     public void setSfahucent(String sfahucent) { this.sfahucent = sfahucent; }
@@ -53,4 +54,7 @@ public class sfahuc {
 
     public String getSfahuc009() { return sfahuc009; }
     public void setSfahuc009(String sfahuc009) { this.sfahuc009 = sfahuc009; }
+
+    public String getSfahuc010() { return sfahuc010; }
+    public void setSfahuc010(String sfahuc010) { this.sfahuc010 = sfahuc010; }
 }
