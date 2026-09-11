@@ -14,7 +14,8 @@ public class sfahuc {
     private String sfahuc007;
     private String sfahuc008;
     private String sfahuc009;
-    private String sfahuc010;
+    private String sfahuc010;   // 产线（字符型）
+    private String sfahuc011;   // 订单需求数量（NUMBER）
 
     public String getSfahucent() { return sfahucent; }
     public void setSfahucent(String sfahucent) { this.sfahucent = sfahucent; }
@@ -57,4 +58,7 @@ public class sfahuc {
 
     public String getSfahuc010() { return sfahuc010; }
     public void setSfahuc010(String sfahuc010) { this.sfahuc010 = sfahuc010; }
+
+    public String getSfahuc011() { return sfahuc011; }
+    public void setSfahuc011(String sfahuc011) { this.sfahuc011 = sfahuc011; }
 }

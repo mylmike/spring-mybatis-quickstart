@@ -54,21 +54,21 @@ public interface SfahucMapper {
                                     @Param("sfahuc002") String sfahuc002);
 
     @Insert("insert into sfahuc_t " +
-            "(sfahucent,sfahucsite,sfahucdocno,sfahucseq,sfahuc001,sfahuc002,sfahuc003,sfahuc004,sfahuc005,sfahuc006,sfahuc007,sfahuc008,sfahuc009,sfahuc010) " +
+            "(sfahucent,sfahucsite,sfahucdocno,sfahucseq,sfahuc001,sfahuc002,sfahuc003,sfahuc004,sfahuc005,sfahuc006,sfahuc007,sfahuc008,sfahuc009,sfahuc010,sfahuc011) " +
             "values (" +
-            "TO_NUMBER(#{sfahucent}),#{sfahucsite},#{sfahucdocno},TO_NUMBER(#{sfahucseq})," +
-            "#{sfahuc001},#{sfahuc002},TO_NUMBER(#{sfahuc003}),#{sfahuc004},TO_NUMBER(#{sfahuc005})," +
-            "TO_DATE(#{sfahuc006},'YYYY-MM-DD'),TO_DATE(#{sfahuc007},'YYYY-MM-DD'),#{sfahuc008},TO_NUMBER(#{sfahuc009})," +
-            "#{sfahuc010})")
+            "TO_NUMBER(#{sfahucent}),#{sfahucsite},#{sfahucdocno},TO_NUMBER(NULLIF(#{sfahucseq},''))," +
+            "#{sfahuc001},#{sfahuc002},TO_NUMBER(NULLIF(#{sfahuc003},'')),#{sfahuc004},TO_NUMBER(NULLIF(#{sfahuc005},''))," +
+            "TO_DATE(SUBSTR(NULLIF(#{sfahuc006},''),1,10),'YYYY-MM-DD'),TO_DATE(SUBSTR(NULLIF(#{sfahuc007},''),1,10),'YYYY-MM-DD'),#{sfahuc008},TO_NUMBER(NULLIF(#{sfahuc009},''))," +
+            "#{sfahuc010,jdbcType=VARCHAR},TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},'')))")
     int insert(sfahuc record);
 
     @Update("update sfahuc_t set " +
             "sfahucent=TO_NUMBER(#{sfahucent}),sfahucsite=#{sfahucsite}," +
             "sfahuc001=#{sfahuc001},sfahuc002=#{sfahuc002}," +
-            "sfahuc003=TO_NUMBER(#{sfahuc003})," +
-            "sfahuc004=#{sfahuc004},sfahuc005=TO_NUMBER(#{sfahuc005})," +
-            "sfahuc006=TO_DATE(#{sfahuc006},'YYYY-MM-DD'),sfahuc007=TO_DATE(#{sfahuc007},'YYYY-MM-DD')," +
-            "sfahuc008=#{sfahuc008},sfahuc009=TO_NUMBER(#{sfahuc009}) " +
+            "sfahuc003=TO_NUMBER(NULLIF(#{sfahuc003},''))," +
+            "sfahuc004=#{sfahuc004},sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},''))," +
+            "sfahuc006=TO_DATE(SUBSTR(NULLIF(#{sfahuc006},''),1,10),'YYYY-MM-DD'),sfahuc007=TO_DATE(SUBSTR(NULLIF(#{sfahuc007},''),1,10),'YYYY-MM-DD')," +
+            "sfahuc008=#{sfahuc008,jdbcType=VARCHAR},sfahuc009=TO_NUMBER(NULLIF(#{sfahuc009,jdbcType=VARCHAR},'')),sfahuc010=#{sfahuc010,jdbcType=VARCHAR},sfahuc011=TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},'')) " +
             "where sfahucdocno=#{sfahucdocno} and sfahucseq=TO_NUMBER(#{sfahucseq})")
     int update(sfahuc record);
 
@@ -78,12 +78,12 @@ public interface SfahucMapper {
      * 注意：set 中【不包含】主键字段，避免把多行改成相同主键导致 ORA-00001
      */
     @Update("update sfahuc_t set " +
-            "sfahucdocno=#{sfahucdocno},sfahucseq=TO_NUMBER(#{sfahucseq})," +
-            "sfahuc003=TO_NUMBER(#{sfahuc003})," +
-            "sfahuc004=#{sfahuc004},sfahuc005=TO_NUMBER(#{sfahuc005})," +
-            "sfahuc006=TO_DATE(#{sfahuc006},'YYYY-MM-DD'),sfahuc007=TO_DATE(#{sfahuc007},'YYYY-MM-DD')," +
-            "sfahuc008=#{sfahuc008},sfahuc009=TO_NUMBER(#{sfahuc009})," +
-            "sfahuc010=#{sfahuc010} " +
+            "sfahucdocno=#{sfahucdocno},sfahucseq=TO_NUMBER(NULLIF(#{sfahucseq},''))," +
+            "sfahuc003=TO_NUMBER(NULLIF(#{sfahuc003},''))," +
+            "sfahuc004=#{sfahuc004},sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},''))," +
+            "sfahuc006=TO_DATE(SUBSTR(NULLIF(#{sfahuc006},''),1,10),'YYYY-MM-DD'),sfahuc007=TO_DATE(SUBSTR(NULLIF(#{sfahuc007},''),1,10),'YYYY-MM-DD')," +
+            "sfahuc008=#{sfahuc008},sfahuc009=TO_NUMBER(NULLIF(#{sfahuc009},''))," +
+            "sfahuc010=#{sfahuc010,jdbcType=VARCHAR},sfahuc011=TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},'')) " +
             "where sfahucent=TO_NUMBER(#{sfahucent}) and sfahucsite=#{sfahucsite} " +
             "and sfahuc001=#{sfahuc001} and sfahuc002=#{sfahuc002}")
     int updateByPk(sfahuc record);

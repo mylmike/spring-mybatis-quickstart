@@ -137,13 +137,39 @@ public interface DsdataMapper {
     @SelectProvider(type = BomSqlProvider.class, method = "queryBomChildren")
     List<Map<String, Object>> queryBomChildren(@Param("ent") String ent,
                                                @Param("site") String site,
-                                               @Param("itemNo") String itemNo);
+                                               @Param("itemNo") String itemNo,
+                                               @Param("imaf013") String imaf013,
+                                               @Param("lang") String lang);
+
+    /**
+     * 查询品号基本资料 imaf_t 的补货策略（imaf013）
+     */
+    @SelectProvider(type = ItemImSqlProvider.class, method = "queryByItem")
+    Map<String, Object> queryItemIm(@Param("ent") String ent,
+                                    @Param("site") String site,
+                                    @Param("item") String item);
+
+    /**
+     * 查询品号描述 imaal_t 的品名（imaal003）、规格（imaal004）
+     */
+    @SelectProvider(type = ItemDescSqlProvider.class, method = "queryByItem")
+    Map<String, Object> queryItemDesc(@Param("ent") String ent,
+                                      @Param("lang") String lang,
+                                      @Param("item") String item);
 
     /**
      * 查询管理系统菜单目录 gzweuc_t 原始数据
      */
     @SelectProvider(type = GzweucSqlProvider.class, method = "queryMenuTree")
     List<Map<String, Object>> queryMenuTree(Map<String, Object> params);
+
+    /**
+     * BOM 展开时关联工单主表 sfaa_t
+     * 条件：sfaaent(账套) + sfaasite(据点) + sfaa022(来源单号) + sfaa023(来源序号，可选)
+     * 返回行含 sfaa010(生产料号)，供 Java 侧与 BOM 元件 bmba003 匹配
+     */
+    @SelectProvider(type = SfaaBomSqlProvider.class, method = "queryByOrder")
+    List<Map<String, Object>> querySfaaByOrder(Map<String, Object> params);
 
     /**
      * 查询品号基础信息（imae_t）
@@ -157,5 +183,18 @@ public interface DsdataMapper {
     List<Map<String, Object>> findImae051(@Param("imaeent") String imaeent,
                                           @Param("imaesite") String imaesite,
                                           @Param("imae001") String imae001);
+
+    /**
+     * 查询品号默认成本中心（imae_t.imae035）及成本中心名（ooefl_t.ooefl003，按语言 lang）
+     * 用于 BOM 根节点（订单品号）补充默认成本中心信息
+     */
+    @Select("SELECT e.imae035 AS imae035, d.ooefl003 AS imae035Name " +
+            "FROM imae_t e " +
+            "LEFT JOIN ooefl_t d ON d.ooeflent = e.imaeent AND d.ooefl001 = e.imae035 AND d.ooefl002 = #{lang} " +
+            "WHERE e.imaeent = #{ent} AND e.imaesite = #{site} AND e.imae001 = #{item}")
+    Map<String, Object> queryItemCostCenter(@Param("ent") String ent,
+                                            @Param("site") String site,
+                                            @Param("item") String item,
+                                            @Param("lang") String lang);
 
 }

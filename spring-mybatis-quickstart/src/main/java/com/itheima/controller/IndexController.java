@@ -211,6 +211,8 @@ public class  IndexController {
             item.set("sfahuc007", h.getSfahuc007());
             item.set("sfahuc008", h.getSfahuc008());
             item.set("sfahuc009", h.getSfahuc009());
+            item.set("sfahuc010", h.getSfahuc010());   // 产线
+            item.set("sfahuc011", h.getSfahuc011());   // 订单需求数量
             master.add(item);
         }
 
@@ -279,6 +281,7 @@ public class  IndexController {
         String sfaa068 = (String) request.get("sfaa068");
         String sfaadocno = (String) request.get("sfaadocno");
         String sfaa010 = (String) request.get("sfaa010");
+        String sfaastus = getString(request, "sfaastus");
         // 期望行数：不传或非法传 0，由 Provider 兜底为上限 1000
         int rowMax = 0;
         Object rowMaxObj = request.get("rowMax");
@@ -301,6 +304,7 @@ public class  IndexController {
         params.put("sfaa068", sfaa068);
         params.put("sfaadocno", sfaadocno);
         params.put("sfaa010", sfaa010);
+        params.put("sfaastus", sfaastus);
         params.put("rowMax", rowMax);
 
         try {
@@ -402,7 +406,8 @@ public class  IndexController {
      *             "sfahucseq": "1",        // 可选
      *             "sfahuc003": "数量", "sfahuc004": "订单号",
      *             "sfahuc005": "订单序号", "sfahuc006": "2026-09-02", "sfahuc007": "2026-09-20",
-     *             "sfahuc008": "成本中心", "sfahuc009": "...", "sfahuc010": "五金组"
+     *             "sfahuc008": "成本中心", "sfahuc009": "已入库数量",
+     *             "sfahuc010": "产线", "sfahuc011": "订单需求数量（数值）"
      *         }
      *     ]
      * }
@@ -416,6 +421,7 @@ public class  IndexController {
      * 返回: { "success": true, "insertCount": x, "updateCount": y, "skipCount": z }
      */
     @PostMapping("/saveSfahuc")
+    @Transactional("secondTransactionManager")
     public JSON saveSfahuc(@RequestBody Map<String, Object> request) {
         JSONObject result = new JSONObject();
         int insertCount = 0;
@@ -424,6 +430,24 @@ public class  IndexController {
 
         try {
             List<Map<String, Object>> list = (List<Map<String, Object>>) request.get("list");
+
+            // 预校验：NUMBER 型列必须是合法数字或空，否则直接给出明确提示（避免 Oracle ORA-01722 难以定位）
+            if (list != null) {
+                String[] numericFields = {"sfahucseq", "sfahuc003", "sfahuc005", "sfahuc009", "sfahuc011"};
+                for (Map<String, Object> item : list) {
+                    String wo = getString(item, "sfahuc001");
+                    String pn = getString(item, "sfahuc002");
+                    for (String f : numericFields) {
+                        String v = getString(item, f);
+                        if (!isBlank(v) && !isNumeric(v)) {
+                            result.set("success", false);
+                            result.set("message", "字段 " + f + " 是数值列，收到非法数字值 [" + v
+                                    + "]（工单号=" + wo + "，品号=" + pn + "）。请传数字或留空，不能传文本。");
+                            return result;
+                        }
+                    }
+                }
+            }
 
             if (list != null) {
                 for (Map<String, Object> item : list) {
@@ -456,7 +480,8 @@ public class  IndexController {
                     record.setSfahuc007(getString(item, "sfahuc007"));
                     record.setSfahuc008(getString(item, "sfahuc008"));
                     record.setSfahuc009(getString(item, "sfahuc009"));
-                    record.setSfahuc010(getString(item, "sfahuc010"));
+                    record.setSfahuc010(getString(item, "sfahuc010"));   // 产线（字符）
+                    record.setSfahuc011(getString(item, "sfahuc011"));   // 订单需求数量（NUMBER）
 
                     // 按新主键判重：账套+据点+工单号+品号
                     List<sfahuc> existingList = sfahucMapper.findByEntSiteDocno(
@@ -473,10 +498,27 @@ public class  IndexController {
                 }
             }
 
+            // 落库自校验：按主键回查，确认数据确实已写入（排查「显示成功但库里没有」）
+            int verifiedCount = 0;
+            if (list != null) {
+                for (Map<String, Object> item : list) {
+                    String c = getString(item, "sfahucent");
+                    if (isBlank(c)) c = "60";
+                    String s = getString(item, "sfahucsite");
+                    if (isBlank(s)) s = "NBYL";
+                    String a = getString(item, "sfahuc001");
+                    String b = getString(item, "sfahuc002");
+                    if (isBlank(a) || isBlank(b)) continue;
+                    List<sfahuc> ex = sfahucMapper.findByEntSiteDocno(c, s, a, b);
+                    if (ex != null && !ex.isEmpty()) verifiedCount++;
+                }
+            }
+
             result.set("success", true);
             result.set("insertCount", insertCount);
             result.set("updateCount", updateCount);
             result.set("skipCount", skipCount);
+            result.set("verifiedCount", verifiedCount);
         } catch (Exception e) {
             result.set("success", false);
             result.set("message", e.getMessage());
@@ -496,9 +538,11 @@ public class  IndexController {
      *     "sfahucsite": "NBYL",     // 可选，默认 NBYL
      *     "sfahuc001": "...",       // 必填，工单号
      *     "sfahuc002": "...",       // 必填
-     *     "sfahuc008": "成本中心"     // 可选，有值才作为条件
+     *     "sfahuc008": "成本中心",     // 可选，有值才作为条件
+     *     "sfahuc004": "订单号",       // 可选，有值才作为条件
+     *     "sfahuc005": "订单序号"      // 可选，有值才作为条件
      * }
-     * 删除条件：账套 + 据点 + sfahuc001 + sfahuc002 [+ 成本中心 sfahuc008]
+     * 删除条件：账套 + 据点 + sfahuc001 + sfahuc002 [+ 成本中心 sfahuc008] [+ 订单号 sfahuc004 + 订单序号 sfahuc005]
      * 同步删除 sfajuc_t：sfajucent=sfahucent and sfajucsite=sfahucsite and sfajuc001=sfahuc001
      *   （仅当 sfahuc_t 实际删到记录时才执行，避免误删日计划）
      * 返回: { success, deletedCount, sfajucDeletedCount, deleted, condition }
@@ -514,6 +558,8 @@ public class  IndexController {
             String sfahuc001 = getString(request, "sfahuc001");
             String sfahuc002 = getString(request, "sfahuc002");
             String sfahuc008 = getString(request, "sfahuc008");
+            String sfahuc004 = getString(request, "sfahuc004");
+            String sfahuc005 = getString(request, "sfahuc005");
 
             // 必填校验
             if (isBlank(sfahuc001) || isBlank(sfahuc002)) {
@@ -529,6 +575,12 @@ public class  IndexController {
             params.put("sfahuc002", sfahuc002);
             if (!isBlank(sfahuc008)) {
                 params.put("sfahuc008", sfahuc008);
+            }
+            if (!isBlank(sfahuc004)) {
+                params.put("sfahuc004", sfahuc004);
+            }
+            if (!isBlank(sfahuc005)) {
+                params.put("sfahuc005", sfahuc005);
             }
 
             int deletedCount = sfahucMapper.deleteByKey(params);
@@ -550,6 +602,8 @@ public class  IndexController {
             condition.set("sfahuc001", sfahuc001);
             condition.set("sfahuc002", sfahuc002);
             condition.set("sfahuc008", sfahuc008);
+            condition.set("sfahuc004", sfahuc004);
+            condition.set("sfahuc005", sfahuc005);
             result.set("condition", condition);
         } catch (Exception e) {
             result.set("success", false);
@@ -1603,6 +1657,19 @@ public class  IndexController {
         return false;
     }
 
+    /** 判断是否为合法数字（用于校验 NUMBER 型列，避免 Oracle ORA-01722） */
+    private boolean isNumeric(String val) {
+        if (val == null) return false;
+        String t = val.trim();
+        if (t.isEmpty()) return false;
+        try {
+            new BigDecimal(t);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     /**
      * 账号认证接口
      * 前端 POST /auth
@@ -1858,9 +1925,18 @@ public class  IndexController {
      *     "xmdddocno": "SO-001",   // 订单单号，可选
      *     "xmdd001": "A-001"       // 品号，可选
      * }
+     * 关联工单主表 sfaa_t（条件：sfaaent=ent and sfaasite=site and sfaa022=订单号
+     *   and sfaa023=订单序号 and sfaa010=bmba003），每个节点附加：
+     *   sfaadocno(工单号)、sfaa068(站点)、sfaa019(预计开工日)、sfaa020(预计完工日)、
+     *   sfaa012(生产数量)、sfaa050(入库数量)、sfaastus(状态码)、ooefl003(成本中心名)
+     *   同一品号命中多张工单（一对多）时合并：sfaadocno 多个单号空格分隔；sfaa019 取最早；
+     *   sfaa020 取最晚；sfaa012/sfaa050 求和；sfaa068/sfaastus/ooefl003 取第一条
+     *   未匹配到工单时这些字段为空串
      * 返回: { "success": true, "tree": [根节点(含children, level)], "flat": [扁平明细], "total": n }
      * 节点字段: 订单品号, bmba001(主件), bmba009(BOM项序), bmba003(元件),
-     *         BOM用量, bmba010(单位), 实际用量, 订单需求用量, level, children
+     *         BOM用量, bmba010(单位), 实际用量, 订单需求用量, xmdd011(出货日期), level, children,
+     *         imae035(默认成本中心), imae035Name(默认成本中心名),
+     *         sfaadocno, sfaa068, sfaa019, sfaa020, sfaa012, sfaa050, sfaastus
      */
     @PostMapping("/queryOrderBom")
     public JSONObject queryOrderBom(@RequestBody Map<String, Object> request) {
@@ -1873,6 +1949,9 @@ public class  IndexController {
             String docNo = getString(request, "xmdddocno");
             String itemNo = getString(request, "xmdd001");
             String seq = getString(request, "xmddseq");
+            String imaf013 = getString(request, "imaf013");
+            String lang = getString(request, "lang");
+            if (isBlank(lang)) lang = "zh_CN";
 
             Map<String, Object> params = new HashMap<>();
             params.put("ent", ent);
@@ -1885,18 +1964,65 @@ public class  IndexController {
             JSONArray tree = new JSONArray();
             JSONArray flat = new JSONArray();
 
+            // 按「订单号+订单序号」预先查出该订单的全部工单，按生产料号 sfaa010 建索引
+            // 这样整棵树只需查一次库，避免每个节点都查一遍
+            // 同一品号可能对应多张工单（一对多），此处全部保留，合并规则见 attachSfaaInfo
+            Map<String, List<Map<String, Object>>> sfaaIndex = new HashMap<>();
+            if (!isBlank(docNo)) {
+                Map<String, Object> sfaaParams = new HashMap<>();
+                sfaaParams.put("ent", ent);
+                sfaaParams.put("site", site);
+                sfaaParams.put("orderNo", docNo);
+                sfaaParams.put("lang", lang);
+                if (!isBlank(seq)) {
+                    sfaaParams.put("orderSeq", seq);
+                }
+                List<Map<String, Object>> sfaaRows = dsdataMapper.querySfaaByOrder(sfaaParams);
+                if (sfaaRows != null) {
+                    for (Map<String, Object> r : sfaaRows) {
+                        String item010 = stringValueIgnoreCase(r, "sfaa010");
+                        // 同一品号的多张工单合并为一个列表（SQL 已按 sfaadocno 排序，结果确定）
+                        if (!isBlank(item010)) {
+                            sfaaIndex.computeIfAbsent(item010, k -> new ArrayList<>()).add(r);
+                        }
+                    }
+                }
+                System.out.println("[queryOrderBom] 工单索引: 订单号=" + docNo + ", 序号=" + seq
+                        + ", 工单条数=" + (sfaaRows == null ? 0 : sfaaRows.size())
+                        + ", 涉及品号数=" + sfaaIndex.size());
+            }
+
             for (Map<String, Object> item : orderItems) {
                 String rootItem = stringValueIgnoreCase(item, "xmdd001");
                 String orderDocNo = stringValueIgnoreCase(item, "xmdddocno");
                 String orderSeq = stringValueIgnoreCase(item, "xmddseq");
                 BigDecimal orderQty = toBigDecimal(getValueIgnoreCase(item, "xmdd005"));
+                String shipDate = stringValueIgnoreCase(item, "xmdd011");
                 if (isBlank(rootItem)) continue;
+
+                // 根节点（订单品号）的补货策略 imaf013
+                Map<String, Object> rootIm = dsdataMapper.queryItemIm(ent, site, rootItem);
+                String rootIm013 = (rootIm == null) ? "" : stringValueIgnoreCase(rootIm, "imaf013");
+                // 根节点（订单品号）品名/规格
+                Map<String, Object> rootDesc = dsdataMapper.queryItemDesc(ent, lang, rootItem);
+                String rootImaal003 = (rootDesc == null) ? "" : stringValueIgnoreCase(rootDesc, "imaal003");
+                String rootImaal004 = (rootDesc == null) ? "" : stringValueIgnoreCase(rootDesc, "imaal004");
+                // 根节点（订单品号）默认成本中心 imae035 及其名称 ooefl003
+                Map<String, Object> rootCC = dsdataMapper.queryItemCostCenter(ent, site, rootItem, lang);
+                String rootIm035 = (rootCC == null) ? "" : stringValueIgnoreCase(rootCC, "imae035");
+                String rootIm035Name = (rootCC == null) ? "" : stringValueIgnoreCase(rootCC, "imae035Name");
 
                 // 根节点：订单品号本身，实际用量=1
                 JSONObject root = new JSONObject();
                 root.set("订单号", orderDocNo);
                 root.set("订单序号", orderSeq);
                 root.set("订单品号", rootItem);
+                root.set("imaf013", rootIm013);
+                root.set("imaal003", rootImaal003);
+                root.set("imaal004", rootImaal004);
+                root.set("xmdd011", shipDate);
+                root.set("imae035", rootIm035);
+                root.set("imae035Name", rootIm035Name);
                 root.set("bmba001", rootItem);
                 root.set("bmba009", "");
                 root.set("bmba003", rootItem);
@@ -1905,16 +2031,27 @@ public class  IndexController {
                 root.set("实际用量", BigDecimal.ONE);
                 root.set("订单需求用量", orderQty.setScale(2, RoundingMode.HALF_UP));
                 root.set("level", 1);
+                // 关联工单（按生产料号 sfaa010 = 根节点品号匹配）
+                attachSfaaInfo(root, sfaaIndex, rootItem);
                 JSONArray children = new JSONArray();
                 root.set("children", children);
                 tree.add(root);
 
                 // 根节点同时加入扁平明细
-                flat.add(buildFlatNode(orderDocNo, orderSeq, rootItem, rootItem, "", rootItem, BigDecimal.ONE, "", BigDecimal.ONE, orderQty, 1));
+                JSONObject flatRoot = buildFlatNode(orderDocNo, orderSeq, rootItem, rootItem, "", rootItem,
+                        BigDecimal.ONE, "", BigDecimal.ONE, orderQty, 1, shipDate);
+                attachSfaaInfo(flatRoot, sfaaIndex, rootItem);
+                flatRoot.set("imaf013", rootIm013);
+                flatRoot.set("imaal003", rootImaal003);
+                flatRoot.set("imaal004", rootImaal004);
+                flatRoot.set("xmdd011", shipDate);
+                flatRoot.set("imae035", rootIm035);
+                flatRoot.set("imae035Name", rootIm035Name);
+                flat.add(flatRoot);
 
                 // 从第一层 BOM 开始递归下展
-                expandBomTree(ent, site, orderDocNo, orderSeq, rootItem, rootItem, BigDecimal.ONE, orderQty,
-                        children, flat, 2, new HashSet<>());
+                expandBomTree(ent, site, orderDocNo, orderSeq, shipDate, rootItem, rootItem, BigDecimal.ONE, orderQty,
+                        children, flat, 2, new HashSet<>(), sfaaIndex, imaf013, lang);
             }
 
             result.set("success", true);
@@ -1941,15 +2078,17 @@ public class  IndexController {
      * @param flat            扁平明细结果集
      * @param level           当前层级（根为 1，向下递增）
      * @param path            当前递归路径，防止循环引用
+     * @param sfaaIndex       工单索引（key = 生产料号 sfaa010），用于给节点附加工单信息
      */
-    private void expandBomTree(String ent, String site, String docNo, String seq,
+    private void expandBomTree(String ent, String site, String docNo, String seq, String shipDate,
                                String rootItem, String parentItem,
                                BigDecimal parentActualQty, BigDecimal orderQty,
-                               JSONArray children, JSONArray flat, int level, Set<String> path) {
+                               JSONArray children, JSONArray flat, int level, Set<String> path,
+                               Map<String, List<Map<String, Object>>> sfaaIndex, String imaf013, String lang) {
         if (path.contains(parentItem)) return;
         path.add(parentItem);
 
-        List<Map<String, Object>> childRows = dsdataMapper.queryBomChildren(ent, site, parentItem);
+        List<Map<String, Object>> childRows = dsdataMapper.queryBomChildren(ent, site, parentItem, imaf013, lang);
         if (childRows == null || childRows.isEmpty()) {
             path.remove(parentItem);
             return;
@@ -1968,13 +2107,17 @@ public class  IndexController {
                 bmba012 = BigDecimal.ONE;
             }
 
-            // BOM用量 = bmba011 * (1 + NVL(bmbb011, 0)) / bmba012，保留2位小数
-            BigDecimal bomQty = bmba011.multiply(BigDecimal.ONE.add(bmbb011))
+            // 损耗率 bmbb011 为百分比值（如 5 表示 5%），需除以 100 才是真实损耗率
+            BigDecimal lossRate = bmbb011.divide(BigDecimal.valueOf(100), 10, RoundingMode.HALF_UP);
+            // BOM用量 = bmba011 * (1 + 损耗率) / bmba012，保留6位小数并去掉尾随无效0
+            BigDecimal bomQty = bmba011.multiply(BigDecimal.ONE.add(lossRate))
                     .divide(bmba012, 10, RoundingMode.HALF_UP)
-                    .setScale(2, RoundingMode.HALF_UP);
-            // 实际用量 = 父件实际用量 * BOM用量，保留2位小数
+                    .setScale(6, RoundingMode.HALF_UP)
+                    .stripTrailingZeros();
+            // 实际用量 = 父件实际用量 * BOM用量，保留6位小数并去掉尾随无效0
             BigDecimal actualQty = parentActualQty.multiply(bomQty)
-                    .setScale(2, RoundingMode.HALF_UP);
+                    .setScale(6, RoundingMode.HALF_UP)
+                    .stripTrailingZeros();
             // 订单需求用量 = 实际用量 * 订单数量，保留2位小数
             BigDecimal demandQty = actualQty.multiply(orderQty)
                     .setScale(2, RoundingMode.HALF_UP);
@@ -1991,16 +2134,33 @@ public class  IndexController {
             node.set("实际用量", actualQty);
             node.set("订单需求用量", demandQty);
             node.set("level", level);
+            // 补货策略（自制件/采购件等）
+            node.set("imaf013", stringValueIgnoreCase(child, "imaf013"));
+            // 品名 / 规格
+            node.set("imaal003", stringValueIgnoreCase(child, "imaal003"));
+            node.set("imaal004", stringValueIgnoreCase(child, "imaal004"));
+            node.set("xmdd011", shipDate);
+            node.set("imae035", stringValueIgnoreCase(child, "imae035"));
+            node.set("imae035Name", stringValueIgnoreCase(child, "imae035Name"));
+            // 关联工单（按生产料号 sfaa010 = 元件品号 bmba003 匹配）
+            attachSfaaInfo(node, sfaaIndex, childItem);
             JSONArray subChildren = new JSONArray();
             node.set("children", subChildren);
             children.add(node);
 
             // 扁平明细副本（不含 children，便于表格/导出）
-            flat.add(buildFlatNode(docNo, seq, rootItem, parentNo, childSeq, childItem,
-                    bomQty, childUnit, actualQty, demandQty, level));
+            JSONObject flatNode = buildFlatNode(docNo, seq, rootItem, parentNo, childSeq, childItem,
+                    bomQty, childUnit, actualQty, demandQty, level, shipDate);
+            attachSfaaInfo(flatNode, sfaaIndex, childItem);
+            flatNode.set("imaf013", stringValueIgnoreCase(child, "imaf013"));
+            flatNode.set("imaal003", stringValueIgnoreCase(child, "imaal003"));
+            flatNode.set("imaal004", stringValueIgnoreCase(child, "imaal004"));
+            flatNode.set("imae035", stringValueIgnoreCase(child, "imae035"));
+            flatNode.set("imae035Name", stringValueIgnoreCase(child, "imae035Name"));
+            flat.add(flatNode);
 
-            expandBomTree(ent, site, docNo, seq, rootItem, childItem, actualQty, orderQty,
-                    subChildren, flat, level + 1, path);
+            expandBomTree(ent, site, docNo, seq, shipDate, rootItem, childItem, actualQty, orderQty,
+                    subChildren, flat, level + 1, path, sfaaIndex, imaf013, lang);
         }
 
         path.remove(parentItem);
@@ -2009,7 +2169,7 @@ public class  IndexController {
     /** 构建扁平明细节点 */
     private JSONObject buildFlatNode(String docNo, String seq, String rootItem, String parentNo,
                                      String bomSeq, String item, BigDecimal bomQty, String unit,
-                                     BigDecimal actualQty, BigDecimal demandQty, int level) {
+                                     BigDecimal actualQty, BigDecimal demandQty, int level, String shipDate) {
         JSONObject row = new JSONObject();
         row.set("订单号", docNo);
         row.set("订单序号", seq);
@@ -2022,7 +2182,79 @@ public class  IndexController {
         row.set("实际用量", actualQty);
         row.set("订单需求用量", demandQty);
         row.set("level", level);
+        row.set("xmdd011", shipDate);
         return row;
+    }
+
+    /**
+     * 给 BOM 节点附加工单信息（按生产料号 sfaa010 = 品号匹配）
+     * 关联条件已在查询工单时限定：sfaaent=ent and sfaasite=site
+     *   and sfaa022=订单号 and sfaa023=订单序号
+     *
+     * 同一品号命中多张工单（一对多）时按以下规则合并：
+     *   A sfaadocno  多个工单号以空格分隔
+     *   B sfaa019    预计开工日取最早
+     *   C sfaa020    预计完工日取最晚
+     *   D sfaa012    生产数量求和
+     *   E sfaa050    入库数量求和
+     *   sfaa068 / sfaastus / ooefl003 取排序后第一条（SQL 已按 sfaadocno 排序，结果确定）
+     * 未匹配到工单时这些字段置为空串
+     */
+    private void attachSfaaInfo(JSONObject node, Map<String, List<Map<String, Object>>> sfaaIndex, String itemNo) {
+        List<Map<String, Object>> list = (sfaaIndex == null || isBlank(itemNo)) ? null : sfaaIndex.get(itemNo);
+        if (list == null || list.isEmpty()) {
+            node.set("sfaadocno", "");
+            node.set("sfaa068", "");
+            node.set("sfaa019", "");
+            node.set("sfaa020", "");
+            node.set("sfaa012", "");
+            node.set("sfaa050", "");
+            node.set("sfaastus", "");
+            node.set("ooefl003", "");
+            return;
+        }
+        StringBuilder docNos = new StringBuilder();
+        String min019 = null;
+        String max020 = null;
+        BigDecimal sum012 = BigDecimal.ZERO;
+        BigDecimal sum050 = BigDecimal.ZERO;
+        String first068 = "", firstStus = "", firstOoefl = "";
+        for (int i = 0; i < list.size(); i++) {
+            Map<String, Object> r = list.get(i);
+            // A 多个工单号以空格分隔
+            String doc = stringValueIgnoreCase(r, "sfaadocno");
+            if (!doc.isEmpty()) {
+                if (docNos.length() > 0) docNos.append(' ');
+                docNos.append(doc);
+            }
+            // B 预计开工日取最早（日期为 YYYY-MM-DD，字符串比较即可）
+            String s019 = stringValueIgnoreCase(r, "sfaa019");
+            if (!s019.isEmpty() && (min019 == null || s019.compareTo(min019) < 0)) {
+                min019 = s019;
+            }
+            // C 预计完工日取最晚
+            String s020 = stringValueIgnoreCase(r, "sfaa020");
+            if (!s020.isEmpty() && (max020 == null || s020.compareTo(max020) > 0)) {
+                max020 = s020;
+            }
+            // D 生产数量求和、E 入库数量求和
+            sum012 = sum012.add(toBigDecimal(getValueIgnoreCase(r, "sfaa012")));
+            sum050 = sum050.add(toBigDecimal(getValueIgnoreCase(r, "sfaa050")));
+            if (i == 0) {
+                first068 = stringValueIgnoreCase(r, "sfaa068");
+                firstStus = stringValueIgnoreCase(r, "sfaastus");
+                firstOoefl = stringValueIgnoreCase(r, "ooefl003");
+            }
+        }
+        node.set("sfaadocno", docNos.toString());
+        node.set("sfaa068", first068);
+        node.set("sfaa019", min019 == null ? "" : min019);
+        node.set("sfaa020", max020 == null ? "" : max020);
+        // 合计结果去掉多余小数 0，避免科学计数法（如 400.00 → 400）
+        node.set("sfaa012", sum012.stripTrailingZeros().toPlainString());
+        node.set("sfaa050", sum050.stripTrailingZeros().toPlainString());
+        node.set("sfaastus", firstStus);
+        node.set("ooefl003", firstOoefl);
     }
 
     /**
@@ -2389,6 +2621,155 @@ public class  IndexController {
             e.printStackTrace();
         }
         return result;
+    }
+
+    /**
+     * 查询「可排产」工单：去掉已排完的工单，已排未排完的返回剩余可排数量
+     * 前端 POST /querySchedulableWorkOrders
+     * 请求体 JSON 示例：
+     * {
+     *     "token": "xxx",
+     *     "sfaaent": "60",          // 可选，默认 60
+     *     "sfaasite": "NBYL",       // 可选，默认 NBYL
+     *     "sfaa010": "18097818352", // 生产品号，必填
+     *     "sfaastus": "M,F,N,C",    // 可选，逗号分隔；不传则不加该条件
+     *     "sfaa022": "来源单号",     // 可选，精确匹配；不传则不拼接
+     *     "sfaa023": "来源序号",     // 可选，精确匹配；不传则不拼接
+     *     "sfaadocno": "工单号"       // 可选，精确匹配；不传则不拼接
+     * }
+     * 返回字段：sfaadocno(工单号)、sfaastus(工单状态码)、sfaa010(生产品号)、sfaa012(生产数量)、kpsl(可排数量)、
+     *          sfaa050(入库数量)、sfaa068(成本中心)、sfaa019(预计开工日期)、sfaa020(预计完工日期)
+     * 最多返回 30 条
+     */
+    @PostMapping("/querySchedulableWorkOrders")
+    public JSONObject querySchedulableWorkOrders(@RequestBody Map<String, Object> request) {
+        JSONObject result = new JSONObject();
+        JSONArray master = new JSONArray();
+        try {
+            String sfaaent = getString(request, "sfaaent");
+            if (isBlank(sfaaent)) sfaaent = "60";
+            String sfaasite = getString(request, "sfaasite");
+            if (isBlank(sfaasite)) sfaasite = "NBYL";
+            String sfaa010 = getString(request, "sfaa010");
+
+            if (isBlank(sfaa010)) {
+                result.set("success", false);
+                result.set("message", "sfaa010(生产品号)不能为空");
+                return result;
+            }
+
+            Map<String, Object> params = new HashMap<>();
+            params.put("sfaaent", sfaaent);
+            params.put("sfaasite", sfaasite);
+            params.put("sfaa010", sfaa010);
+            // 工单状态：可选，逗号分隔；空串/空白则不拼接
+            putIfNotBlank(params, request, "sfaastus");
+            // 以下为可选精确匹配条件；空串/空白则不拼接
+            putIfNotBlank(params, request, "sfaa022");
+            putIfNotBlank(params, request, "sfaa023");
+            putIfNotBlank(params, request, "sfaadocno");
+
+            List<Map<String, Object>> rows = sfaaMapper.listSchedulableByItem(params);
+            if (rows != null) {
+                for (Map<String, Object> row : rows) {
+                    JSONObject item = new JSONObject();
+                    item.set("sfaadocno", getValueIgnoreCase(row, "sfaadocno"));
+                    item.set("sfaa010", getValueIgnoreCase(row, "sfaa010"));
+                    item.set("sfaa012", getValueIgnoreCase(row, "sfaa012"));
+                    item.set("kpsl", getValueIgnoreCase(row, "kpsl"));
+                    item.set("sfaa050", getValueIgnoreCase(row, "sfaa050"));
+                    item.set("sfaa068", getValueIgnoreCase(row, "sfaa068"));
+                    item.set("sfaastus", getValueIgnoreCase(row, "sfaastus"));
+                    item.set("sfaa019", formatDate(getValueIgnoreCase(row, "sfaa019")));
+                    item.set("sfaa020", formatDate(getValueIgnoreCase(row, "sfaa020")));
+                    master.add(item);
+                }
+            }
+
+            result.set("success", true);
+            result.set("master", master);
+            result.set("total", master.size());
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    /**
+     * 按订单行查询已排工单数量：用于判断订单行是否已排完
+     * 前端 POST /queryOrderScheduledQty
+     * 请求体 JSON 示例：
+     * {
+     *     "token": "xxx",
+     *     "sfahucent": "60",      // 可选，默认 60
+     *     "sfahucsite": "NBYL",   // 可选，默认 NBYL
+     *     "sfahuc004": "来源单号", // 来源单号，必填
+     *     "sfahuc005": "来源序号", // 来源序号，必填
+     *     "sfahuc002": "品号"       // 可选，有值才作为过滤条件
+     * }
+     * 返回：success、sfahuc004、sfahuc005、ypgds(已排工单数)；未排过则 ypgds=0
+     */
+    @PostMapping("/queryOrderScheduledQty")
+    public JSONObject queryOrderScheduledQty(@RequestBody Map<String, Object> request) {
+        JSONObject result = new JSONObject();
+        try {
+            String sfahucent = getString(request, "sfahucent");
+            if (isBlank(sfahucent)) sfahucent = "60";
+            String sfahucsite = getString(request, "sfahucsite");
+            if (isBlank(sfahucsite)) sfahucsite = "NBYL";
+            String sfahuc004 = getString(request, "sfahuc004");
+            String sfahuc005 = getString(request, "sfahuc005");
+            String sfahuc002 = getString(request, "sfahuc002");
+
+            if (isBlank(sfahuc004) || isBlank(sfahuc005)) {
+                result.set("success", false);
+                result.set("message", "sfahuc004(来源单号)与 sfahuc005(来源序号)不能为空");
+                return result;
+            }
+
+            Map<String, Object> params = new HashMap<>();
+            params.put("sfahucent", sfahucent);
+            params.put("sfahucsite", sfahucsite);
+            params.put("sfahuc004", sfahuc004);
+            params.put("sfahuc005", sfahuc005);
+            if (!isBlank(sfahuc002)) {
+                params.put("sfahuc002", sfahuc002);
+            }
+
+            List<Map<String, Object>> rows = sfaaMapper.queryOrderScheduledQty(params);
+            long ypgds = 0L;
+            if (rows != null && !rows.isEmpty()) {
+                Object v = getValueIgnoreCase(rows.get(0), "ypgds");
+                if (v != null && !String.valueOf(v).trim().isEmpty()) {
+                    ypgds = Math.round(Double.parseDouble(String.valueOf(v)));
+                }
+            }
+
+            result.set("success", true);
+            result.set("sfahuc004", sfahuc004);
+            result.set("sfahuc005", sfahuc005);
+            result.set("ypgds", ypgds);
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    /** 将日期对象格式化为 yyyy-MM-dd；null 或非日期返回空串 */
+    private String formatDate(Object val) {
+        if (val == null) {
+            return "";
+        }
+        if (val instanceof java.util.Date) {
+            return new SimpleDateFormat("yyyy-MM-dd").format((java.util.Date) val);
+        }
+        return String.valueOf(val);
     }
 
 }

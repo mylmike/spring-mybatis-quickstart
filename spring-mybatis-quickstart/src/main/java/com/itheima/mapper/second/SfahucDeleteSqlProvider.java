@@ -10,6 +10,7 @@ import java.util.Map;
  *   sfahucent(账套)、sfahucsite(营运据点)：固定条件，Controller 保证有值（默认 60 / NBYL）
  *   sfahuc001、sfahuc002：必填，Controller 已校验
  *   sfahuc008(成本中心)：可选，null / 空串 / 纯空白 时不拼接
+ *   sfahuc004(订单号)、sfahuc005(订单序号)：可选，前端传了才作为删除条件，未传忽略
  */
 public class SfahucDeleteSqlProvider {
 
@@ -22,6 +23,12 @@ public class SfahucDeleteSqlProvider {
             WHERE("sfahuc002 = #{sfahuc002}");
             if (hasText(params.get("sfahuc008"))) {
                 WHERE("sfahuc008 = #{sfahuc008}");
+            }
+            if (hasText(params.get("sfahuc004"))) {
+                WHERE("sfahuc004 = #{sfahuc004}");
+            }
+            if (hasText(params.get("sfahuc005"))) {
+                WHERE("sfahuc005 = #{sfahuc005}");
             }
         }}.toString();
     }
