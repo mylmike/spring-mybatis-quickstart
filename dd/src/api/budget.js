@@ -1,8 +1,8 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: 'http://192.168.0.85:85',
-  timeout: 10000
+  baseURL: (typeof window !== 'undefined' ? window.location.origin : '') + '/snapshot',
+  timeout: 30000
 })
 
 /**
@@ -10,7 +10,7 @@ const api = axios.create({
  * @param {Object} query - 查询条件，包含任意有值的字段
  */
 export function queryBgbsuc(query) {
-  return api.post('/snapshot/queryBgbsuc', {
+  return api.post('/queryBgbsuc', {
     token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
     ...query
   })
@@ -21,7 +21,7 @@ export function queryBgbsuc(query) {
  * @param {Array} list - 预算明细列表
  */
 export function saveBgbsuc(list) {
-  return api.post('/snapshot/saveBgbsuc', {
+  return api.post('/saveBgbsuc', {
     token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
     list
   })
@@ -32,7 +32,7 @@ export function saveBgbsuc(list) {
  * @param {Object} params - { bgbsucent, bgbsucld, bgbsuc001, bgbsuc002 }
  */
 export function deleteBgbsuc(params) {
-  return api.post('/snapshot/deleteBgbsuc', {
+  return api.post('/deleteBgbsuc', {
     token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
     ...params
   })
@@ -50,7 +50,7 @@ export function queryDept(params) {
     ooefl002: 'zh_CN'
   }
   if (params.ooeg003) body.ooeg003 = params.ooeg003
-  return api.post('/snapshot/queryDept', body)
+  return api.post('/queryDept', body)
 }
 
 /**
@@ -58,7 +58,7 @@ export function queryDept(params) {
  * @param {Object} params - { glacl002: 科目编号, glacl004: 科目名称, glacl003: 默认"1", glacl007: 默认"6" }
  */
 export function querySubject(params) {
-  return api.post('/snapshot/querySubject', {
+  return api.post('/querySubject', {
     token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
     glacl002: params.glacl002 || '',
     glacl004: params.glacl004 || '',
@@ -72,7 +72,7 @@ export function querySubject(params) {
  * @param {Object} params - { ent, site, year, dept, subjectName, summary }
  */
 export function queryBudgetReport(params) {
-  return api.post('/snapshot/queryBudgetActualVariance', {
+  return api.post('/queryBudgetActualVariance', {
     token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
     ent: params.ent || '60',
     site: params.site || 'NBYL',
@@ -88,7 +88,7 @@ export function queryBudgetReport(params) {
  * @param {Object} query - { bgbtucent, bgbtucld, bgbtuc001, bgbtuc002 }
  */
 export function queryBgbtuc(query) {
-  return api.post('/snapshot/queryBgbtuc', {
+  return api.post('/queryBgbtuc', {
     token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
     ...query
   })
@@ -99,7 +99,7 @@ export function queryBgbtuc(query) {
  * @param {Array} list - 预算采购核价列表
  */
 export function saveBgbtuc(list) {
-  return api.post('/snapshot/saveBgbtuc', {
+  return api.post('/saveBgbtuc', {
     token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
     list
   })
@@ -110,7 +110,7 @@ export function saveBgbtuc(list) {
  * @param {Object} params - { bgbtucent, bgbtucld, bgbtuc001, bgbtuc002 }
  */
 export function deleteBgbtuc(params) {
-  return api.post('/snapshot/deleteBgbtuc', {
+  return api.post('/deleteBgbtuc', {
     token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
     ...params
   })
@@ -121,7 +121,7 @@ export function deleteBgbtuc(params) {
  * @param {Object} params - { ent, site, lang, year, month }
  */
 export function queryBudgetPurchaseAnalysis(params) {
-  return api.post('/snapshot/queryBudgetPurchaseAnalysis', {
+  return api.post('/queryBudgetPurchaseAnalysis', {
     token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
     ent: params.ent || '60',
     site: params.site || 'NBYL',
