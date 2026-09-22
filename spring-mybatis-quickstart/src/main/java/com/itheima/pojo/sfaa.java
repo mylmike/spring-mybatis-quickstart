@@ -50,4 +50,8 @@ public class sfaa {
     public String getOoefl003() { return ooefl003; }
     public void setOoefl003(String ooefl003) { this.ooefl003 = ooefl003; }
 
+    private String upph;        // UPPH = 3600 / imae051（标准工时）；imae051 为 0 或 NULL 时为 0
+    public String getUpph() { return upph; }
+    public void setUpph(String upph) { this.upph = upph; }
+
 }

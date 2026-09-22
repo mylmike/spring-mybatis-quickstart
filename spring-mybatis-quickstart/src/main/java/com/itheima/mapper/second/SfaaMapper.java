@@ -3,6 +3,7 @@ package com.itheima.mapper.second;
 import com.itheima.pojo.sfaa;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.SelectProvider;
+import org.apache.ibatis.annotations.UpdateProvider;
 
 import java.util.List;
 import java.util.Map;
@@ -44,5 +45,13 @@ public interface SfaaMapper {
      */
     @SelectProvider(type = SfaaSqlProvider.class, method = "orderScheduledQty")
     List<Map<String, Object>> queryOrderScheduledQty(Map<String, Object> params);
+
+    /**
+     * 将 sfahuc_t 中某工单的 订单号/订单序号/预计开工/预计完工 同步回写 sfaa_t
+     * 匹配条件：sfaaent=ent and sfaasite=site and sfaadocno=docno（工单号务必对应）
+     * 仅在源值非空且（目标列当前值不同 或 目标列为空）时才更新对应列，否则保持原值
+     */
+    @UpdateProvider(type = SfaaSqlProvider.class, method = "syncSfaaFromSfahuc")
+    int syncSfaaFromSfahuc(Map<String, Object> params);
 
 }

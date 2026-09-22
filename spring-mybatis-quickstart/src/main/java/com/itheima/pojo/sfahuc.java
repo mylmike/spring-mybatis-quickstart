@@ -17,6 +17,14 @@ public class sfahuc {
     private String sfahuc010;   // 产线（字符型）
     private String sfahuc011;   // 订单需求数量（NUMBER）
 
+    private String sfaastus;    // 工单结案状态（取自 sfaa_t，LEFT JOIN 工单主表）
+    private String sfaa050;     // 入库数量（取自 sfaa_t）
+    private String yuLiang;     // 余量 = sfaa012 - sfaa050（取自 sfaa_t）
+    private String sfahuc012;   // 人数
+    private String sfahuc013;   // 工作时长
+    private String sfahuc014;   // UPPH值
+    private String sfahuc015;   // 日产量 = sfahuc012 * sfahuc013 * sfahuc014
+
     public String getSfahucent() { return sfahucent; }
     public void setSfahucent(String sfahucent) { this.sfahucent = sfahucent; }
 
@@ -61,4 +69,25 @@ public class sfahuc {
 
     public String getSfahuc011() { return sfahuc011; }
     public void setSfahuc011(String sfahuc011) { this.sfahuc011 = sfahuc011; }
+
+    public String getSfaastus() { return sfaastus; }
+    public void setSfaastus(String sfaastus) { this.sfaastus = sfaastus; }
+
+    public String getSfahuc012() { return sfahuc012; }
+    public void setSfahuc012(String sfahuc012) { this.sfahuc012 = sfahuc012; }
+
+    public String getSfahuc013() { return sfahuc013; }
+    public void setSfahuc013(String sfahuc013) { this.sfahuc013 = sfahuc013; }
+
+    public String getSfahuc014() { return sfahuc014; }
+    public void setSfahuc014(String sfahuc014) { this.sfahuc014 = sfahuc014; }
+
+    public String getSfahuc015() { return sfahuc015; }
+    public void setSfahuc015(String sfahuc015) { this.sfahuc015 = sfahuc015; }
+
+    public String getSfaa050() { return sfaa050; }
+    public void setSfaa050(String sfaa050) { this.sfaa050 = sfaa050; }
+
+    public String getYuLiang() { return yuLiang; }
+    public void setYuLiang(String yuLiang) { this.yuLiang = yuLiang; }
 }

@@ -194,8 +194,34 @@ public class  IndexController {
         putIfNotBlank(params, request, "sfahuc004");
         putIfNotBlank(params, request, "sfahuc005");
         putIfNotBlank(params, request, "sfahuc001");
+        // 工单主表 sfaa_t 的日期/状态过滤条件（空值不拼接）
+        putIfNotBlank(params, request, "sfaadocdt_start");
+        putIfNotBlank(params, request, "sfaadocdt_end");
+        putIfNotBlank(params, request, "sfaa019_start");
+        putIfNotBlank(params, request, "sfaa019_end");
+        putIfNotBlank(params, request, "sfaa020_start");
+        putIfNotBlank(params, request, "sfaa020_end");
+        putIfNotBlank(params, request, "sfaastus");
 
         List<sfahuc> sfahucList = sfahucMapper.listByDocno(params);
+
+        // 排产子表：按 (工单号 sfajuc001 + 产线 sfajuc004) 分组，一对多挂到主表记录下
+        Map<String, JSONArray> planMap = new LinkedHashMap<>();
+        for (Map<String, Object> row : sfahucMapper.listSfajucPlan(params)) {
+            String docno = getString(row, "SFAJUC001");
+            String line = getString(row, "SFAJUC004");
+            String key = docno + "|" + line;
+            JSONArray arr = planMap.get(key);
+            if (arr == null) {
+                arr = new JSONArray();
+                planMap.put(key, arr);
+            }
+            JSONObject plan = new JSONObject();
+            plan.set("排产日期", getString(row, "PAICHANDATE"));
+            plan.set("排产数量", getString(row, "PAICHANQTY"));
+            arr.add(plan);
+        }
+
         for (sfahuc h : sfahucList) {
             JSONObject item = new JSONObject();
             item.set("sfahucent", h.getSfahucent());
@@ -213,6 +239,21 @@ public class  IndexController {
             item.set("sfahuc009", h.getSfahuc009());
             item.set("sfahuc010", h.getSfahuc010());   // 产线
             item.set("sfahuc011", h.getSfahuc011());   // 订单需求数量
+            item.set("sfaastus", h.getSfaastus());     // 工单结案状态（取自 sfaa_t）
+            item.set("sfaa050", h.getSfaa050());       // 入库数量（取自 sfaa_t）
+            item.set("余量", h.getYuLiang());          // 余量 = sfaa012 - sfaa050（取自 sfaa_t）
+            // 主表自有列：人数、工作时长、UPPH值
+            item.set("sfahuc012", h.getSfahuc012());   // 人数
+            item.set("sfahuc013", h.getSfahuc013());   // 工作时长
+            item.set("sfahuc014", h.getSfahuc014());   // UPPH值
+            // 日产量 = 人数 * 工作时长 * UPPH（空值按 0 处理）
+            BigDecimal r12 = toBigDecimal(h.getSfahuc012());
+            BigDecimal r13 = toBigDecimal(h.getSfahuc013());
+            BigDecimal r14 = toBigDecimal(h.getSfahuc014());
+            item.set("sfahuc015", r12.multiply(r13).multiply(r14));   // 日产量
+            // 来自 sfajuc_t 的排产汇总（一对多：一个工单+产线对应多天排产，以下一级子表返回）
+            String planKey = h.getSfahuc001() + "|" + h.getSfahuc010();
+            item.set("排产子表", planMap.getOrDefault(planKey, new JSONArray()));
             master.add(item);
         }
 
@@ -258,12 +299,12 @@ public class  IndexController {
      *     "sfaa068": "成本中心",      // 可选
      *     "sfaadocno": "工单号",      // 可选
      *     "sfaa010": "生产料号",      // 可选
-     *     "rowMax": 500             // 可选，最多 1000
+     *     "rowMax": 500             // 可选，最多 300
      * }
      * 规则：
      *   固定条件（始终拼接）：sfaaent(默认60)、sfaasite(默认NBYL)、sfaastus='F'（只查已发放工单）
      *   其余条件为 null / 空串 / 纯空白 / 未传 时，视为不设置该条件，不拼接 where
-     *   rowMax 可选，期望返回行数；最多返回 1000 条（不传/<=0 取 1000，超过 1000 截断为 1000）
+     *   rowMax 可选，期望返回行数；最多返回 300 条（不传/<=0 取 300，超过 300 截断为 300）
      * 返回: { "master": [{ sfaadocno, sfaa010, ... }], "total": n, "truncated": true/false }
      *   truncated=true 表示结果已被截断到上限
      *   master 每项含：sfaastus(工单状态码)、sfaa050(入库合格数量)、
@@ -282,7 +323,7 @@ public class  IndexController {
         String sfaadocno = (String) request.get("sfaadocno");
         String sfaa010 = (String) request.get("sfaa010");
         String sfaastus = getString(request, "sfaastus");
-        // 期望行数：不传或非法传 0，由 Provider 兜底为上限 1000
+        // 期望行数：不传或非法传 0，由 Provider 兜底为上限 300
         int rowMax = 0;
         Object rowMaxObj = request.get("rowMax");
         if (rowMaxObj != null) {
@@ -304,6 +345,12 @@ public class  IndexController {
         params.put("sfaa068", sfaa068);
         params.put("sfaadocno", sfaadocno);
         params.put("sfaa010", sfaa010);
+        putIfNotBlank(params, request, "sfaadocdt_start");
+        putIfNotBlank(params, request, "sfaadocdt_end");
+        putIfNotBlank(params, request, "sfaa019_start");
+        putIfNotBlank(params, request, "sfaa019_end");
+        putIfNotBlank(params, request, "sfaa020_start");
+        putIfNotBlank(params, request, "sfaa020_end");
         params.put("sfaastus", sfaastus);
         params.put("rowMax", rowMax);
 
@@ -327,6 +374,7 @@ public class  IndexController {
                 BigDecimal qualifiedQty = toBigDecimal(s.getSfaa050());
                 item.set("余量", produceQty.subtract(qualifiedQty));
                 item.set("ooefl003", s.getOoefl003());
+                item.set("UPPH", s.getUpph());   // UPPH = 3600 / imae051（标准工时），imae051 为 0 或 NULL 时为 0
                 master.add(item);
             }
             result.set("success", true);
@@ -339,7 +387,7 @@ public class  IndexController {
         }
 
         // 硬上限
-        final int MAX_ROWS = 1000;
+        final int MAX_ROWS = 300;
         int effectiveMax = rowMax <= 0 ? MAX_ROWS : Math.min(rowMax, MAX_ROWS);
         result.set("total", master.size());
         result.set("limit", effectiveMax);
@@ -351,6 +399,7 @@ public class  IndexController {
     /**
      * 订单未交货查询清单（用于前端下拉框绑定）
      * 基于 xmdd_t / xmdc_t / xmda_t，返回未交货订单明细行
+     * 限制：仅返回开单日期(xmdadocdt)最近 6 个月的记录
      * 返回：{ success, list: [{ docno, seq, item, undeliveredQty, customer, docDate }], total }
      */
     @PostMapping("/queryUndeliveredOrders")
@@ -418,7 +467,11 @@ public class  IndexController {
      *
      *   一个工单号(sfahuc001) 可对应多个品号(sfahuc002)，每个品号组合都是独立行
      *   注意：update 的 set 中【不修改】主键四列（sfahucent/site/001/002），否则会把多行撞成同一主键 ORA-00001
-     * 返回: { "success": true, "insertCount": x, "updateCount": y, "skipCount": z }
+     * 返回: { "success": true, "insertCount": x, "updateCount": y, "skipCount": z,
+     *         "verifiedCount": v, "sfaaUpdateCount": u }
+     *   保存成功(insert+update>0)后，会按 工单号 将 sfahuc_t 的 订单号/订单序号/预计开工/预计完工
+     *   同步回写 sfaa_t（匹配 sfaaent=sfahucent and sfaasite=sfahucsite and sfaadocno=sfahuc001），
+     *   仅当源值非空且与目标列不同才更新；sfaaUpdateCount 为回写影响行数，异常写入 sfaaSyncMsg
      */
     @PostMapping("/saveSfahuc")
     @Transactional("secondTransactionManager")
@@ -427,6 +480,7 @@ public class  IndexController {
         int insertCount = 0;
         int updateCount = 0;
         int skipCount = 0;
+        List<sfahuc> savedRecords = new ArrayList<>();
 
         try {
             List<Map<String, Object>> list = (List<Map<String, Object>>) request.get("list");
@@ -482,6 +536,15 @@ public class  IndexController {
                     record.setSfahuc009(getString(item, "sfahuc009"));
                     record.setSfahuc010(getString(item, "sfahuc010"));   // 产线（字符）
                     record.setSfahuc011(getString(item, "sfahuc011"));   // 订单需求数量（NUMBER）
+                    // 人数、工作时长、UPPH值
+                    record.setSfahuc012(getString(item, "sfahuc012"));   // 人数
+                    record.setSfahuc013(getString(item, "sfahuc013"));   // 工作时长
+                    record.setSfahuc014(getString(item, "sfahuc014"));   // UPPH值
+                    // 日产量 = 人数 * 工作时长 * UPPH（空值按 0 处理）
+                    BigDecimal d12 = toBigDecimal(record.getSfahuc012());
+                    BigDecimal d13 = toBigDecimal(record.getSfahuc013());
+                    BigDecimal d14 = toBigDecimal(record.getSfahuc014());
+                    record.setSfahuc015(d12.multiply(d13).multiply(d14).toPlainString());
 
                     // 按新主键判重：账套+据点+工单号+品号
                     List<sfahuc> existingList = sfahucMapper.findByEntSiteDocno(
@@ -494,6 +557,40 @@ public class  IndexController {
                         // 更新时 where 主键四列，set 不改主键字段，可改 docno/seq/其它列
                         sfahucMapper.updateByPk(record);
                         updateCount++;
+                    }
+                    // 记录已保存（insert/update）的 sfahuc，供后续同步回写 sfaa_t
+                    savedRecords.add(record);
+                }
+            }
+
+            // 保存成功后，将 sfahuc_t 的 订单号/订单序号/预计开工/预计完工 按工单号同步回写 sfaa_t
+            // 匹配条件：sfaaent=sfahucent and sfaasite=sfahucsite and sfaadocno=sfahuc001（工单号务必对应）
+            int sfaaUpdateCount = 0;
+            StringBuilder sfaaSyncMsg = new StringBuilder();
+            if ((insertCount + updateCount) > 0 && !savedRecords.isEmpty()) {
+                for (sfahuc r : savedRecords) {
+                    String o = r.getSfahuc004();   // 订单号
+                    String s = r.getSfahuc005();   // 订单序号
+                    String sd = r.getSfahuc006();  // 预计开工日期
+                    String ed = r.getSfahuc007();  // 预计完工日期
+                    // 四个同步字段都为空则无需更新
+                    if (isBlank(o) && isBlank(s) && isBlank(sd) && isBlank(ed)) {
+                        continue;
+                    }
+                    Map<String, Object> sp = new HashMap<>();
+                    sp.put("ent", r.getSfahucent());
+                    sp.put("site", r.getSfahucsite());
+                    sp.put("docno", r.getSfahuc001());
+                    sp.put("o", o);
+                    sp.put("s", s);
+                    sp.put("sd", sd);
+                    sp.put("ed", ed);
+                    try {
+                        int n = sfaaMapper.syncSfaaFromSfahuc(sp);
+                        sfaaUpdateCount += n;
+                    } catch (Exception ex) {
+                        sfaaSyncMsg.append("工单号[").append(r.getSfahuc001())
+                                .append("]同步sfaa失败:").append(ex.getMessage()).append("; ");
                     }
                 }
             }
@@ -519,6 +616,10 @@ public class  IndexController {
             result.set("updateCount", updateCount);
             result.set("skipCount", skipCount);
             result.set("verifiedCount", verifiedCount);
+            result.set("sfaaUpdateCount", sfaaUpdateCount);
+            if (sfaaSyncMsg.length() > 0) {
+                result.set("sfaaSyncMsg", sfaaSyncMsg.toString());
+            }
         } catch (Exception e) {
             result.set("success", false);
             result.set("message", e.getMessage());
@@ -1349,6 +1450,11 @@ public class  IndexController {
             }
         }
         return null;
+    }
+
+    /** 将 null 转为空串，避免 fastjson 序列化时丢弃为 null 的字段 */
+    private static String nvl(Object val) {
+        return val == null ? "" : String.valueOf(val);
     }
 
     /**
@@ -2752,6 +2858,222 @@ public class  IndexController {
             result.set("sfahuc004", sfahuc004);
             result.set("sfahuc005", sfahuc005);
             result.set("ypgds", ypgds);
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    /**
+     * 查询物料品名/规格：品号精确 + 品名/规格 模糊匹配
+     * 前端 POST /searchItemDesc
+     * 请求体 JSON 示例：
+     * {
+     *     "token": "xxx",
+     *     "imaalent": "60",          // 可选，默认 60
+     *     "imaal002": "zh_CN",       // 可选，默认 zh_CN
+     *     "imaal001": "品号",         // 可选，精确匹配
+     *     "imaal003": "品名关键字",   // 可选，like 模糊
+     *     "imaal004": "规格关键字"    // 可选，like 模糊
+     * }
+     * 三个查询条件(imaal001/imaal003/imaal004)都为空时报错，避免全表扫描；最多返回 20 条
+     * 返回：list[{imaal001, imaal003, imaal004}]、total
+     */
+    @PostMapping("/searchItemDesc")
+    public JSONObject searchItemDesc(@RequestBody Map<String, Object> request) {
+        JSONObject result = new JSONObject();
+        try {
+            String imaalent = getString(request, "imaalent");
+            if (isBlank(imaalent)) imaalent = "60";
+            String imaal002 = getString(request, "imaal002");
+            if (isBlank(imaal002)) imaal002 = "zh_CN";
+            String imaal001 = getString(request, "imaal001");
+            String imaal003 = getString(request, "imaal003");
+            String imaal004 = getString(request, "imaal004");
+
+            // 至少提供一个查询条件，避免全表扫描
+            if (isBlank(imaal001) && isBlank(imaal003) && isBlank(imaal004)) {
+                result.set("success", false);
+                result.set("message", "请至少提供一项查询条件：imaal001(品号)/imaal003(品名)/imaal004(规格)");
+                return result;
+            }
+
+            Map<String, Object> params = new HashMap<>();
+            params.put("imaalent", imaalent);
+            params.put("imaal002", imaal002);
+            if (!isBlank(imaal001)) params.put("imaal001", imaal001);
+            if (!isBlank(imaal003)) params.put("imaal003", imaal003);
+            if (!isBlank(imaal004)) params.put("imaal004", imaal004);
+
+            List<Map<String, Object>> rows = dsdataMapper.searchItemDesc(params);
+            JSONArray list = new JSONArray();
+            if (rows != null) {
+                for (Map<String, Object> row : rows) {
+                    JSONObject item = new JSONObject();
+                    item.set("imaal001", getValueIgnoreCase(row, "imaal001"));
+                    item.set("imaal003", getValueIgnoreCase(row, "imaal003"));
+                    item.set("imaal004", getValueIgnoreCase(row, "imaal004"));
+                    list.add(item);
+                }
+            }
+
+            result.set("success", true);
+            result.set("list", list);
+            result.set("total", list.size());
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    /**
+     * 按用户账号查询权限（gzypuc_t）
+     * 前端 POST /queryUserPermission
+     * 请求体 JSON 示例：
+     * {
+     *     "token": "e6338a4acxw502kmf5dwr316ss8u0ymb",
+     *     "gzypucent": "60",        // 可选，默认 60
+     *     "gzypucld": "NBYL",       // 可选，默认 NBYL
+     *     "gzypuc001": "用户账号"    // 必填
+     * }
+     * 返回：{ success, list: [{ gzypuc002(功能菜单编号), gzypuc003(权限), gzypuc004(功能), gzypuc005(权限部门) }], total }
+     */
+    @PostMapping("/queryUserPermission")
+    public JSONObject queryUserPermission(@RequestBody Map<String, Object> request) {
+        JSONObject result = new JSONObject();
+        try {
+            String gzypucent = getString(request, "gzypucent");
+            if (isBlank(gzypucent)) gzypucent = "60";
+            String gzypucld = getString(request, "gzypucld");
+            if (isBlank(gzypucld)) gzypucld = "NBYL";
+            String gzypuc001 = getString(request, "gzypuc001");
+
+            if (isBlank(gzypuc001)) {
+                result.set("success", false);
+                result.set("message", "gzypuc001(用户账号)不能为空");
+                return result;
+            }
+
+            Map<String, Object> params = new HashMap<>();
+            params.put("gzypucent", gzypucent);
+            params.put("gzypucld", gzypucld);
+            params.put("gzypuc001", gzypuc001);
+
+            List<Map<String, Object>> rows = dsdataMapper.queryUserPermission(params);
+            JSONArray list = new JSONArray();
+            if (rows != null) {
+                for (Map<String, Object> row : rows) {
+                    JSONObject item = new JSONObject();
+                    // null 转为空串，确保 gzypuc005 等字段即使库中为 NULL 也始终出现在返回 JSON 中
+                    item.set("gzypuc002", nvl(getValueIgnoreCase(row, "gzypuc002")));
+                    item.set("gzypuc003", nvl(getValueIgnoreCase(row, "gzypuc003")));
+                    item.set("gzypuc004", nvl(getValueIgnoreCase(row, "gzypuc004")));
+                    item.set("gzypuc005", nvl(getValueIgnoreCase(row, "gzypuc005")));
+                    list.add(item);
+                }
+            }
+
+            result.set("success", true);
+            result.set("list", list);
+            result.set("total", list.size());
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    /**
+     * 查询未完成订单：订单量 > 已出货量（即尚未出完货）
+     * 前端 POST /queryUnfinishedOrders
+     * 请求体 JSON 示例：
+     * {
+     *     "token": "xxx",
+     *     "xmddent": "60",                 // 可选，默认 60
+     *     "xmddsite": "NBYL",              // 可选，默认 NBYL
+     *     "xmdd011_start": "2026-01-01",   // 可选，订单交期 起始(YYYY-MM-DD)
+     *     "xmdd011_end": "2026-12-31",     // 可选，订单交期 结束
+     *     "xmdadocdt_start": "2026-01-01", // 可选，开单日期 起始
+     *     "xmdadocdt_end": "2026-12-31",   // 可选，开单日期 结束
+     *     "xmdddocno": "订单号",            // 可选，精确匹配
+     *     "xmddseq": "订单序号",            // 可选，精确匹配
+     *     "xmdd001": "品号",                // 可选，精确匹配
+     *     "imaal003": "品名",               // 可选，模糊匹配(按品名 imaal003)
+     *     "ooag011": "业务员",              // 可选，模糊匹配
+     *     "imaf013": "补货策略"             // 可选，精确匹配
+     * }
+     * 固定过滤：(xmdd006 - xmdd014) > 0 且 xmdastus='Y' 且 xmdc045='1'
+     * 硬上限：最多返回最近的 300 条
+     * 返回：{ success, list: [{ xmdddocno(订单号), xmddseq(订单序号), xmdd001(品号),
+     *          xmdd006(订单量), xmdd014(已出货量), undqty(未交量), xmdd011(订单交期),
+     *          pmaal004(customerName 客户名称), imaal003(品名), ooag011(业务员), salesempno(业务员工号),
+     *          gzcbl004(补货策略) }], total }
+     */
+    @PostMapping("/queryUnfinishedOrders")
+    public JSONObject queryUnfinishedOrders(@RequestBody Map<String, Object> request) {
+        JSONObject result = new JSONObject();
+        try {
+            String xmddent = getString(request, "xmddent");
+            if (isBlank(xmddent)) xmddent = "60";
+            String xmddsite = getString(request, "xmddsite");
+            if (isBlank(xmddsite)) xmddsite = "NBYL";
+            String xmdd011Start = getString(request, "xmdd011_start");
+            String xmdd011End = getString(request, "xmdd011_end");
+            String xmdadocdtStart = getString(request, "xmdadocdt_start");
+            String xmdadocdtEnd = getString(request, "xmdadocdt_end");
+            String xmdddocno = getString(request, "xmdddocno");   // 订单号
+            String xmddseq = getString(request, "xmddseq");       // 订单序号
+            String xmdd001 = getString(request, "xmdd001");       // 品号
+            String imaal003Cond = getString(request, "imaal003"); // 品名(like)
+            String ooag011 = getString(request, "ooag011");       // 业务员
+            String imaf013 = getString(request, "imaf013");       // 补货策略
+
+            Map<String, Object> params = new HashMap<>();
+            params.put("xmddent", xmddent);
+            params.put("xmddsite", xmddsite);
+            if (!isBlank(xmdd011Start)) params.put("xmdd011_start", xmdd011Start);
+            if (!isBlank(xmdd011End)) params.put("xmdd011_end", xmdd011End);
+            if (!isBlank(xmdadocdtStart)) params.put("xmdadocdt_start", xmdadocdtStart);
+            if (!isBlank(xmdadocdtEnd)) params.put("xmdadocdt_end", xmdadocdtEnd);
+            if (!isBlank(xmdddocno)) params.put("xmdddocno", xmdddocno);
+            if (!isBlank(xmddseq)) params.put("xmddseq", xmddseq);
+            if (!isBlank(xmdd001)) params.put("xmdd001", xmdd001);
+            if (!isBlank(imaal003Cond)) params.put("imaal003", imaal003Cond);
+            if (!isBlank(ooag011)) params.put("ooag011", ooag011);
+            if (!isBlank(imaf013)) params.put("imaf013", imaf013);
+
+            List<Map<String, Object>> rows = orderMapper.queryUnfinishedOrders(params);
+            JSONArray list = new JSONArray();
+            if (rows != null) {
+                for (Map<String, Object> row : rows) {
+                    JSONObject item = new JSONObject();
+                    item.set("xmdddocno", nvl(getValueIgnoreCase(row, "xmdddocno")));
+                    item.set("xmddseq", nvl(getValueIgnoreCase(row, "xmddseq")));
+                    item.set("xmdd001", nvl(getValueIgnoreCase(row, "xmdd001")));
+                    item.set("xmdd006", nvl(getValueIgnoreCase(row, "xmdd006")));
+                    item.set("xmdd014", nvl(getValueIgnoreCase(row, "xmdd014")));
+                    item.set("undqty", nvl(getValueIgnoreCase(row, "undqty")));
+                    item.set("xmdd011", nvl(getValueIgnoreCase(row, "xmdd011")));
+                    item.set("customerName", nvl(getValueIgnoreCase(row, "pmaal004")));
+                    item.set("imaal003", nvl(getValueIgnoreCase(row, "imaal003")));
+                    item.set("ooag011", nvl(getValueIgnoreCase(row, "ooag011")));
+                    item.set("salesempno", nvl(getValueIgnoreCase(row, "salesempno")));
+                    item.set("gzcbl004", nvl(getValueIgnoreCase(row, "gzcbl004")));
+                    list.add(item);
+                }
+            }
+
+            result.set("success", true);
+            result.set("list", list);
+            result.set("total", list.size());
         } catch (Exception e) {
             result.set("success", false);
             result.set("message", e.getMessage());

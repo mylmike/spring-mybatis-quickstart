@@ -158,6 +158,15 @@ public interface DsdataMapper {
                                       @Param("item") String item);
 
     /**
+     * 模糊查询物料品名/规格：品号精确 + 品名/规格 like
+     * 参数（Map）：imaalent(默认60)、imaal002(默认zh_CN)、
+     *            imaal001(品号,可选)、imaal003(品名,可选)、imaal004(规格,可选)
+     * 返回：List<Map>，列含 imaal001 / imaal003 / imaal004
+     */
+    @SelectProvider(type = ItemDescSqlProvider.class, method = "search")
+    List<Map<String, Object>> searchItemDesc(Map<String, Object> params);
+
+    /**
      * 查询管理系统菜单目录 gzweuc_t 原始数据
      */
     @SelectProvider(type = GzweucSqlProvider.class, method = "queryMenuTree")
@@ -196,5 +205,13 @@ public interface DsdataMapper {
                                             @Param("site") String site,
                                             @Param("item") String item,
                                             @Param("lang") String lang);
+
+    /**
+     * 按用户账号查询权限（gzypuc_t）
+     * 参数（Map）：gzypucent(默认60)、gzypucld(默认NBYL)、gzypuc001(用户账号,必填)
+     * 返回：List<Map>，列含 gzypuc002(功能菜单编号)、gzypuc003(权限)、gzypuc004(功能)、gzypuc005(权限部门)
+     */
+    @SelectProvider(type = GzypucSqlProvider.class, method = "queryByUser")
+    List<Map<String, Object>> queryUserPermission(Map<String, Object> params);
 
 }

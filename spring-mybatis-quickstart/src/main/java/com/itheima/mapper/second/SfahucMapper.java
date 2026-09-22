@@ -28,6 +28,14 @@ public interface SfahucMapper {
     @SelectProvider(type = SfahucSqlProvider.class, method = "listByDocno")
     List<sfahuc> listByDocno(Map<String, Object> params);
 
+    /**
+     * 查询 sfajuc_t 按 工单号+产线+日期 汇总的排产数量（排产子表数据）
+     * 返回 List<Map>，列含 sfajuc001 / sfajuc004 / PAICHANDATE / PAICHANQTY
+     * 由 Controller 按 (sfajuc001 + 产线) 分组挂到对应 sfahuc 主表记录下
+     */
+    @SelectProvider(type = SfahucSqlProvider.class, method = "listSfajucPlan")
+    List<Map<String, Object>> listSfajucPlan(Map<String, Object> params);
+
     @Select("select * from sfahuc_t " +
             "where sfahucent=TO_NUMBER(#{sfahucent}) and sfahucsite=#{sfahucsite} " +
             "and sfahucdocno=#{sfahucdocno} and sfahucseq=TO_NUMBER(#{sfahucseq})")
@@ -54,12 +62,13 @@ public interface SfahucMapper {
                                     @Param("sfahuc002") String sfahuc002);
 
     @Insert("insert into sfahuc_t " +
-            "(sfahucent,sfahucsite,sfahucdocno,sfahucseq,sfahuc001,sfahuc002,sfahuc003,sfahuc004,sfahuc005,sfahuc006,sfahuc007,sfahuc008,sfahuc009,sfahuc010,sfahuc011) " +
+            "(sfahucent,sfahucsite,sfahucdocno,sfahucseq,sfahuc001,sfahuc002,sfahuc003,sfahuc004,sfahuc005,sfahuc006,sfahuc007,sfahuc008,sfahuc009,sfahuc010,sfahuc011,sfahuc012,sfahuc013,sfahuc014,sfahuc015) " +
             "values (" +
             "TO_NUMBER(#{sfahucent}),#{sfahucsite},#{sfahucdocno},TO_NUMBER(NULLIF(#{sfahucseq},''))," +
             "#{sfahuc001},#{sfahuc002},TO_NUMBER(NULLIF(#{sfahuc003},'')),#{sfahuc004},TO_NUMBER(NULLIF(#{sfahuc005},''))," +
             "TO_DATE(SUBSTR(NULLIF(#{sfahuc006},''),1,10),'YYYY-MM-DD'),TO_DATE(SUBSTR(NULLIF(#{sfahuc007},''),1,10),'YYYY-MM-DD'),#{sfahuc008},TO_NUMBER(NULLIF(#{sfahuc009},''))," +
-            "#{sfahuc010,jdbcType=VARCHAR},TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},'')))")
+            "#{sfahuc010,jdbcType=VARCHAR},TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},''))," +
+            "TO_NUMBER(NULLIF(#{sfahuc012},'')),TO_NUMBER(NULLIF(#{sfahuc013},'')),TO_NUMBER(NULLIF(#{sfahuc014},'')),TO_NUMBER(NULLIF(#{sfahuc015},'')))")
     int insert(sfahuc record);
 
     @Update("update sfahuc_t set " +
@@ -68,7 +77,8 @@ public interface SfahucMapper {
             "sfahuc003=TO_NUMBER(NULLIF(#{sfahuc003},''))," +
             "sfahuc004=#{sfahuc004},sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},''))," +
             "sfahuc006=TO_DATE(SUBSTR(NULLIF(#{sfahuc006},''),1,10),'YYYY-MM-DD'),sfahuc007=TO_DATE(SUBSTR(NULLIF(#{sfahuc007},''),1,10),'YYYY-MM-DD')," +
-            "sfahuc008=#{sfahuc008,jdbcType=VARCHAR},sfahuc009=TO_NUMBER(NULLIF(#{sfahuc009,jdbcType=VARCHAR},'')),sfahuc010=#{sfahuc010,jdbcType=VARCHAR},sfahuc011=TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},'')) " +
+            "sfahuc008=#{sfahuc008,jdbcType=VARCHAR},sfahuc009=TO_NUMBER(NULLIF(#{sfahuc009,jdbcType=VARCHAR},'')),sfahuc010=#{sfahuc010,jdbcType=VARCHAR},sfahuc011=TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},''))," +
+            "sfahuc012=TO_NUMBER(NULLIF(#{sfahuc012},'')),sfahuc013=TO_NUMBER(NULLIF(#{sfahuc013},'')),sfahuc014=TO_NUMBER(NULLIF(#{sfahuc014},'')),sfahuc015=TO_NUMBER(NULLIF(#{sfahuc015},'')) " +
             "where sfahucdocno=#{sfahucdocno} and sfahucseq=TO_NUMBER(#{sfahucseq})")
     int update(sfahuc record);
 
@@ -83,7 +93,8 @@ public interface SfahucMapper {
             "sfahuc004=#{sfahuc004},sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},''))," +
             "sfahuc006=TO_DATE(SUBSTR(NULLIF(#{sfahuc006},''),1,10),'YYYY-MM-DD'),sfahuc007=TO_DATE(SUBSTR(NULLIF(#{sfahuc007},''),1,10),'YYYY-MM-DD')," +
             "sfahuc008=#{sfahuc008},sfahuc009=TO_NUMBER(NULLIF(#{sfahuc009},''))," +
-            "sfahuc010=#{sfahuc010,jdbcType=VARCHAR},sfahuc011=TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},'')) " +
+            "sfahuc010=#{sfahuc010,jdbcType=VARCHAR},sfahuc011=TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},''))," +
+            "sfahuc012=TO_NUMBER(NULLIF(#{sfahuc012},'')),sfahuc013=TO_NUMBER(NULLIF(#{sfahuc013},'')),sfahuc014=TO_NUMBER(NULLIF(#{sfahuc014},'')),sfahuc015=TO_NUMBER(NULLIF(#{sfahuc015},'')) " +
             "where sfahucent=TO_NUMBER(#{sfahucent}) and sfahucsite=#{sfahucsite} " +
             "and sfahuc001=#{sfahuc001} and sfahuc002=#{sfahuc002}")
     int updateByPk(sfahuc record);

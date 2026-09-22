@@ -42,11 +42,17 @@ public class SfaaSqlProvider {
 
         SQL sql = new SQL() {{
             SELECT("a.*, b.ooefl003");
+            // UPPH = 3600 / 标准工时(imae051)；imae051 为 0 或 NULL 时 UPPH = 0
+            SELECT("CASE WHEN i.imae051 IS NULL OR i.imae051 = 0 THEN 0 ELSE ROUND(3600 / i.imae051) END AS UPPH");
             FROM("SFAA_T a");
             LEFT_OUTER_JOIN("ooefl_t b on b.ooeflent = a.sfaaent and b.ooefl001 = a.sfaa068 and b.ooefl002 = 'zh_CN'");
+            // LEFT JOIN 品号基础信息 imae_t（ent=账套、site=据点、imae001=生产料号=sfaa010），无匹配时 UPPH 记 0
+            LEFT_OUTER_JOIN("imae_t i on i.imaeent = a.sfaaent and i.imaesite = a.sfaasite and i.imae001 = a.sfaa010");
             // 固定条件：账套（数值型）、营运据点
             WHERE("a.sfaaent = TO_NUMBER(#{sfaaent})");
             WHERE("a.sfaasite = #{sfaasite}");
+            // 排除已排过产的单（sfahuc_t 中已存在对应工单号），即"未排产"工单才返回
+            WHERE("a.sfaadocno NOT IN (SELECT sfahuc001 FROM sfahuc_t WHERE sfahucent = a.sfaaent AND sfahucsite = a.sfaasite)");
             // 工单状态过滤：
             //   未传 / 空串  ->  sfaastus = 'F'
             //   传入 'C,F,M' ->  按逗号拆解后  sfaastus IN ('C','F','M')
@@ -93,6 +99,27 @@ public class SfaaSqlProvider {
             // 生产料号
             if (hasText(params.get("sfaa010"))) {
                 WHERE("a.sfaa010 = #{sfaa010}");
+            }
+            // 开单日期范围
+            if (hasText(params.get("sfaadocdt_start"))) {
+                WHERE("a.sfaadocdt >= TO_DATE(SUBSTR(NULLIF(#{sfaadocdt_start},''),1,10),'YYYY-MM-DD')");
+            }
+            if (hasText(params.get("sfaadocdt_end"))) {
+                WHERE("a.sfaadocdt <= TO_DATE(SUBSTR(NULLIF(#{sfaadocdt_end},''),1,10),'YYYY-MM-DD')");
+            }
+            // 预计开工日期范围
+            if (hasText(params.get("sfaa019_start"))) {
+                WHERE("a.sfaa019 >= TO_DATE(SUBSTR(NULLIF(#{sfaa019_start},''),1,10),'YYYY-MM-DD')");
+            }
+            if (hasText(params.get("sfaa019_end"))) {
+                WHERE("a.sfaa019 <= TO_DATE(SUBSTR(NULLIF(#{sfaa019_end},''),1,10),'YYYY-MM-DD')");
+            }
+            // 预计完工日期范围
+            if (hasText(params.get("sfaa020_start"))) {
+                WHERE("a.sfaa020 >= TO_DATE(SUBSTR(NULLIF(#{sfaa020_start},''),1,10),'YYYY-MM-DD')");
+            }
+            if (hasText(params.get("sfaa020_end"))) {
+                WHERE("a.sfaa020 <= TO_DATE(SUBSTR(NULLIF(#{sfaa020_end},''),1,10),'YYYY-MM-DD')");
             }
             // 按预计完工日期(sfaa020)降序，NULL 排最后
             // 内层先排好序，外层 rownum 截断取到的才是"完工日期最新的一批"，而非随机行
@@ -218,6 +245,29 @@ public class SfaaSqlProvider {
             sb.append("  and sfahuc002 = #{sfahuc002} ");
         }
         sb.append("group by sfahuc004, sfahuc005 ");
+        return sb.toString();
+    }
+
+    /**
+     * 将 sfahuc_t 的 订单号(sfahuc004)/订单序号(sfahuc005)/预计开工(sfahuc006)/预计完工(sfahuc007)
+     * 同步回写 sfaa_t 对应字段（sfaa022/sfaa023/sfaa019/sfaa020）
+     * 匹配：sfaaent=ent and sfaasite=site and sfaadocno=docno（工单号务必对应，避免误更新）
+     * 规则：源值非空 且（目标列当前值不同 或 目标列为空）时才更新该列，否则保持原值
+     *   - 字符字段(022/023) 直接比较赋值
+     *   - 日期字段(019/020) 用 TO_DATE(#{sd},'YYYY-MM-DD') 转换后比较/赋值，避免隐式转换风险
+     */
+    public String syncSfaaFromSfahuc(final Map<String, Object> params) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("UPDATE sfaa_t SET ");
+        // sfaa022(来源单号) 类型不定(CHAR/NUMBER)：用 TO_CHAR(sfaa022) 转字符比较，CASE 两分支均为字符
+        sb.append("  sfaa022 = CASE WHEN #{o} IS NOT NULL AND (#{o} <> TO_CHAR(sfaa022) OR sfaa022 IS NULL) THEN #{o} ELSE TO_CHAR(sfaa022) END, ");
+        // sfaa023(来源序号) 类型不定(CHAR/NUMBER)：用 TO_CHAR(sfaa023) 转字符比较，CASE 两分支均为字符，
+        // 赋值给 NUMBER 列时走隐式转换，避免解析期 CASE 字符/数字类型冲突(ORA-00932)
+        sb.append("  sfaa023 = CASE WHEN #{s} IS NOT NULL AND (#{s} <> TO_CHAR(sfaa023) OR sfaa023 IS NULL) THEN #{s} ELSE TO_CHAR(sfaa023) END, ");
+        // sfaa019/020 为 DATE 型：用 TO_DATE 显式转换后比较/赋值
+        sb.append("  sfaa019 = CASE WHEN #{sd} IS NOT NULL AND (TO_DATE(#{sd},'YYYY-MM-DD') <> sfaa019 OR sfaa019 IS NULL) THEN TO_DATE(#{sd},'YYYY-MM-DD') ELSE sfaa019 END, ");
+        sb.append("  sfaa020 = CASE WHEN #{ed} IS NOT NULL AND (TO_DATE(#{ed},'YYYY-MM-DD') <> sfaa020 OR sfaa020 IS NULL) THEN TO_DATE(#{ed},'YYYY-MM-DD') ELSE sfaa020 END ");
+        sb.append("WHERE sfaaent = TO_NUMBER(#{ent}) AND sfaasite = #{site} AND sfaadocno = #{docno}");
         return sb.toString();
     }
 }
