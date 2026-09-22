@@ -44,7 +44,6 @@ public interface SfahucMapper {
                      @Param("sfahucsite") String sfahucsite,
                      @Param("sfahucdocno") String sfahucdocno,
                      @Param("sfahucseq") String sfahucseq);
-
     @Select("select * from sfahuc_t where sfahucdocno=#{sfahucdocno} and sfahucseq=TO_NUMBER(#{sfahucseq})")
     List<sfahuc> findByDocnoAndSeq(@Param("sfahucdocno") String sfahucdocno,
                                     @Param("sfahucseq") String sfahucseq);
