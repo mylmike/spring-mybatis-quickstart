@@ -38,6 +38,7 @@ public interface SfahucMapper {
 
     @Select("select * from sfahuc_t " +
             "where sfahucent=TO_NUMBER(#{sfahucent}) and sfahucsite=#{sfahucsite} " +
+
             "and sfahucdocno=#{sfahucdocno} and sfahucseq=TO_NUMBER(#{sfahucseq})")
     sfahuc findByKey(@Param("sfahucent") String sfahucent,
                      @Param("sfahucsite") String sfahucsite,
