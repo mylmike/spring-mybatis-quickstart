@@ -181,6 +181,13 @@ public interface DsdataMapper {
     List<Map<String, Object>> querySfaaByOrder(Map<String, Object> params);
 
     /**
+     * BOM 展开时关联「工单计划排程档」sfahuc_t（按订单号/序号）取工单信息。
+     * 与 querySfaaByOrder 返回字段一致，供 Java 侧按 sfaa010 建索引；优先级高于直接关联 sfaa_t。
+     */
+    @SelectProvider(type = SfaaBomSqlProvider.class, method = "queryBySchedule")
+    List<Map<String, Object>> querySfaaBySchedule(Map<String, Object> params);
+
+    /**
      * 查询品号基础信息（imae_t）
      * 当前仅取标准工时 imae051，后续有需求可直接扩展 SELECT 字段
      * imaeent 数值型（默认 60），imaesite 字符型（默认 NBYL），imae001 为品号

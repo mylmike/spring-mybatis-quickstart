@@ -12,6 +12,7 @@ import com.itheima.pojo.PmdsdtRow;
 import com.itheima.pojo.SrmDeliveryBody;
 import com.itheima.pojo.WorkOrderRow;
 import com.itheima.pojo.sfaa;
+import com.itheima.pojo.sfaguc;
 import com.itheima.pojo.sfahuc;
 import com.itheima.pojo.sfajuc;
 import com.itheima.pojo.user;
@@ -45,6 +46,9 @@ public class  IndexController {
 
     @Autowired
     private SfajucMapper sfajucMapper;
+
+    @Autowired
+    private SfagucMapper sfagucMapper;
 
     @Autowired
     private SfbaMapper sfbaMapper;
@@ -163,10 +167,12 @@ public class  IndexController {
      *     "sfahucent": "60",          // 账套，可选，默认 60（始终作为条件）
      *     "sfahucsite": "NBYL",       // 营运据点，可选，默认 NBYL（始终作为条件）
      *     "sfahucdocno": "单号",       // 可选
-     *     "sfahuc008": "成本中心",      // 可选
+     *     "sfahuc008": "成本中心",      // 可选，支持逗号分隔多值 IN（如 'A18,A15,A16,A17'）
      *     "sfahuc004": "订单号",        // 可选
      *     "sfahuc005": "订单序号",      // 可选
      *     "sfahuc001": "工单号"         // 可选
+     *     "prod_start": "生产日期最小值", // 可选：筛选期与工单生产期有重叠即返回，即 sfaa020 >= 该值
+     *     "prod_end": "生产日期最大值"   // 可选：即 sfaa019 <= 该值（区间重叠语义）
      * }
      * 规则：
      *   1. 账套 sfahucent（默认 60）、营运据点 sfahucsite（默认 NBYL）为固定条件，始终拼接；前端传了则用前端的值
@@ -201,6 +207,9 @@ public class  IndexController {
         putIfNotBlank(params, request, "sfaa019_end");
         putIfNotBlank(params, request, "sfaa020_start");
         putIfNotBlank(params, request, "sfaa020_end");
+        // 生产日期范围（完全包含语义）：区间内每一天都必须「在生产中」
+        putIfNotBlank(params, request, "prod_start");
+        putIfNotBlank(params, request, "prod_end");
         putIfNotBlank(params, request, "sfaastus");
 
         List<sfahuc> sfahucList = sfahucMapper.listByDocno(params);
@@ -239,8 +248,10 @@ public class  IndexController {
             item.set("sfahuc009", h.getSfahuc009());
             item.set("sfahuc010", h.getSfahuc010());   // 产线
             item.set("sfahuc011", h.getSfahuc011());   // 订单需求数量
+            item.set("sfahucstus", h.getSfahucstus()); // 状态码（主表 sfahuc_t 自有列）
             item.set("sfaastus", h.getSfaastus());     // 工单结案状态（取自 sfaa_t）
             item.set("sfaa050", h.getSfaa050());       // 入库数量（取自 sfaa_t）
+            item.set("sfaa049", h.getSfaa049());       // 已发料套数（取自 sfaa_t）
             item.set("余量", h.getYuLiang());          // 余量 = sfaa012 - sfaa050（取自 sfaa_t）
             // 主表自有列：人数、工作时长、UPPH值
             item.set("sfahuc012", h.getSfahuc012());   // 人数
@@ -251,6 +262,7 @@ public class  IndexController {
             BigDecimal r13 = toBigDecimal(h.getSfahuc013());
             BigDecimal r14 = toBigDecimal(h.getSfahuc014());
             item.set("sfahuc015", r12.multiply(r13).multiply(r14));   // 日产量
+            item.set("sfahuc016", h.getSfahuc016());                 // 排程数量
             // 来自 sfajuc_t 的排产汇总（一对多：一个工单+产线对应多天排产，以下一级子表返回）
             String planKey = h.getSfahuc001() + "|" + h.getSfahuc010();
             item.set("排产子表", planMap.getOrDefault(planKey, new JSONArray()));
@@ -296,7 +308,7 @@ public class  IndexController {
      *     "sfaasite": "NBYL",       // 可选，营运据点，默认 NBYL（始终作为条件）
      *     "orderNo": "订单号",       // 可选，来源单号 sfaa022
      *     "sfaa023": "来源序号",      // 可选
-     *     "sfaa068": "成本中心",      // 可选
+     *     "sfaa068": "成本中心",      // 可选，支持逗号分隔多值 IN（如 'A18,A15,A16,A17'）
      *     "sfaadocno": "工单号",      // 可选
      *     "sfaa010": "生产料号",      // 可选
      *     "rowMax": 500             // 可选，最多 300
@@ -456,7 +468,9 @@ public class  IndexController {
      *             "sfahuc003": "数量", "sfahuc004": "订单号",
      *             "sfahuc005": "订单序号", "sfahuc006": "2026-09-02", "sfahuc007": "2026-09-20",
      *             "sfahuc008": "成本中心", "sfahuc009": "已入库数量",
-     *             "sfahuc010": "产线", "sfahuc011": "订单需求数量（数值）"
+     *             "sfahuc010": "产线", "sfahuc011": "订单需求数量（数值）",
+     *             "sfahucstus": "状态码",       // 可选，按行传入，写入 sfahucstus
+     *             "userid": "用户账号或ID"      // 可选，操作人，优先按行，否则顶层传入
      *         }
      *     ]
      * }
@@ -464,6 +478,8 @@ public class  IndexController {
      *                              + sfahuc001(工单号) + sfahuc002(品号)
      *   四者相同 → 更新该行（where 用主键四列，set 不改主键字段，可改 docno/seq/其它列）
      *   不存在 → 插入新行
+     *   插入新行：sfahuccrtdt=sysdate（数据库系统时间）、sfahuccrtid=userid；更新已有行：sfahucmoddt=sysdate、sfahucmodid=userid
+     *   （创建人/创建时间仅在插入时写入，更新时不改动）；userid 为空则对应人员列写入 NULL
      *
      *   一个工单号(sfahuc001) 可对应多个品号(sfahuc002)，每个品号组合都是独立行
      *   注意：update 的 set 中【不修改】主键四列（sfahucent/site/001/002），否则会把多行撞成同一主键 ORA-00001
@@ -484,6 +500,8 @@ public class  IndexController {
 
         try {
             List<Map<String, Object>> list = (List<Map<String, Object>>) request.get("list");
+            // 操作人（前端传入，优先取每条 item 的 userid，否则取请求级顶层 userid）
+            String reqUserId = getString(request, "userid");
 
             // 预校验：NUMBER 型列必须是合法数字或空，否则直接给出明确提示（避免 Oracle ORA-01722 难以定位）
             if (list != null) {
@@ -540,21 +558,33 @@ public class  IndexController {
                     record.setSfahuc012(getString(item, "sfahuc012"));   // 人数
                     record.setSfahuc013(getString(item, "sfahuc013"));   // 工作时长
                     record.setSfahuc014(getString(item, "sfahuc014"));   // UPPH值
+                    record.setSfahuc016(getString(item, "sfahuc016"));   // 排程数量（前端传入）
                     // 日产量 = 人数 * 工作时长 * UPPH（空值按 0 处理）
                     BigDecimal d12 = toBigDecimal(record.getSfahuc012());
                     BigDecimal d13 = toBigDecimal(record.getSfahuc013());
                     BigDecimal d14 = toBigDecimal(record.getSfahuc014());
                     record.setSfahuc015(d12.multiply(d13).multiply(d14).toPlainString());
+                    // 状态码（前端每条传入）：新增默认 'N'，更新时未传则保持原值（在分支内分别处理）
+                    String sfahucstusVal = getString(item, "sfahucstus");
+                    // 操作人：优先 item.userid，否则请求级 userid；insert 写入 crtid，update 写入 modid
+                    String uid = getString(item, "userid");
+                    if (isBlank(uid)) uid = reqUserId;
+                    record.setSfahuccrtid(uid);
+                    record.setSfahucmodid(uid);
 
                     // 按新主键判重：账套+据点+工单号+品号
                     List<sfahuc> existingList = sfahucMapper.findByEntSiteDocno(
                             sfahucent, sfahucsite, sfahuc001, sfahuc002);
 
                     if (existingList == null || existingList.isEmpty()) {
+                        // 新增：默认未审核 'N'，除非前端明确传值（如 'Y'）
+                        record.setSfahucstus(isBlank(sfahucstusVal) ? "N" : sfahucstusVal);
                         sfahucMapper.insert(record);
                         insertCount++;
                     } else {
                         // 更新时 where 主键四列，set 不改主键字段，可改 docno/seq/其它列
+                        // 前端未传 sfahucstus 则保持原行审核状态不变（record 置 null，updateByPk 不更新该列）
+                        record.setSfahucstus(isBlank(sfahucstusVal) ? null : sfahucstusVal);
                         sfahucMapper.updateByPk(record);
                         updateCount++;
                     }
@@ -595,6 +625,27 @@ public class  IndexController {
                 }
             }
 
+            // 保存成功后：按 订单号+订单序号 汇总该订单在 sfahuc_t 的排程数量 SUM(sfahuc016)，回写 sfaguc_t.sfaguc004（供给总数）
+            // 该 订单号+订单序号 已存在则 update，否则 insert；失败仅记录消息，不影响 sfahuc 保存结果
+            StringBuilder sfagucMsg = new StringBuilder();
+            Map<String, String[]> sfagucKeys = new LinkedHashMap<>();
+            for (sfahuc r : savedRecords) {
+                String o = r.getSfahuc004();          // 订单号
+                String sq = r.getSfahuc005();         // 订单序号
+                if (isBlank(o)) continue;
+                String k = r.getSfahucent() + "|" + r.getSfahucsite() + "|" + o + "|" + sq;
+                sfagucKeys.putIfAbsent(k, new String[]{r.getSfahucent(), r.getSfahucsite(), o, sq});
+            }
+            for (String[] p : sfagucKeys.values()) {
+                try {
+                    BigDecimal supplyTotal = sfahucMapper.sumScheduleQtyByOrderSeq(p[0], p[1], p[2], p[3]);
+                    upsertSfagucSupply(p[0], p[1], p[2], p[3], supplyTotal);
+                } catch (Exception ex) {
+                    sfagucMsg.append("订单号[").append(p[2]).append("]序号[").append(p[3])
+                            .append("]回写sfaguc失败:").append(ex.getMessage()).append("; ");
+                }
+            }
+
             // 落库自校验：按主键回查，确认数据确实已写入（排查「显示成功但库里没有」）
             int verifiedCount = 0;
             if (list != null) {
@@ -619,6 +670,9 @@ public class  IndexController {
             result.set("sfaaUpdateCount", sfaaUpdateCount);
             if (sfaaSyncMsg.length() > 0) {
                 result.set("sfaaSyncMsg", sfaaSyncMsg.toString());
+            }
+            if (sfagucMsg.length() > 0) {
+                result.set("sfagucMsg", sfagucMsg.toString());
             }
         } catch (Exception e) {
             result.set("success", false);
@@ -2029,7 +2083,8 @@ public class  IndexController {
      *     "ent": "60",             // 账套，默认 60
      *     "site": "NBYL",          // 据点，默认 NBYL
      *     "xmdddocno": "SO-001",   // 订单单号，可选
-     *     "xmdd001": "A-001"       // 品号，可选
+     *     "xmdd001": "A-001",      // 品号，可选
+     *     "x_flag": "Y"            // 是否展示虚拟件(imaa004='X')：默认 Y 展示；N 不展示，其下阶子件向上提升
      * }
      * 关联工单主表 sfaa_t（条件：sfaaent=ent and sfaasite=site and sfaa022=订单号
      *   and sfaa023=订单序号 and sfaa010=bmba003），每个节点附加：
@@ -2056,6 +2111,9 @@ public class  IndexController {
             String itemNo = getString(request, "xmdd001");
             String seq = getString(request, "xmddseq");
             String imaf013 = getString(request, "imaf013");
+            // x_flag：是否展示虚拟件（imaa004='X'）。'N'=不展示（下阶子件向上提升），其它/不传=展示
+            String xFlag = getString(request, "x_flag");
+            if (isBlank(xFlag)) xFlag = "Y";
             String lang = getString(request, "lang");
             if (isBlank(lang)) lang = "zh_CN";
 
@@ -2070,10 +2128,12 @@ public class  IndexController {
             JSONArray tree = new JSONArray();
             JSONArray flat = new JSONArray();
 
-            // 按「订单号+订单序号」预先查出该订单的全部工单，按生产料号 sfaa010 建索引
-            // 这样整棵树只需查一次库，避免每个节点都查一遍
-            // 同一品号可能对应多张工单（一对多），此处全部保留，合并规则见 attachSfaaInfo
+            // 按「订单号+订单序号」预先查出该订单的全部工单，按生产料号 sfaa010 建索引（整棵树只查一次）。
+            // 同一品号可能对应多张工单（一对多），全部保留。优先级：
+            //   1) 关联「工单计划排程档 sfahuc_t」(scheduleIndex) —— 高优先级
+            //   2) 直接关联 sfaa_t (directIndex) —— 当某品号在排程档无记录时退回使用
             Map<String, List<Map<String, Object>>> sfaaIndex = new HashMap<>();
+            Map<String, BigDecimal> ypgdsByItem = new HashMap<>();   // 品号 -> 已排工单数量(ypgds)
             if (!isBlank(docNo)) {
                 Map<String, Object> sfaaParams = new HashMap<>();
                 sfaaParams.put("ent", ent);
@@ -2083,19 +2143,66 @@ public class  IndexController {
                 if (!isBlank(seq)) {
                     sfaaParams.put("orderSeq", seq);
                 }
+
+                // 1) 直接关联工单（sfaa_t，按来源单号/序号）—— 低优先级
                 List<Map<String, Object>> sfaaRows = dsdataMapper.querySfaaByOrder(sfaaParams);
+                Map<String, List<Map<String, Object>>> directIndex = new HashMap<>();
                 if (sfaaRows != null) {
                     for (Map<String, Object> r : sfaaRows) {
                         String item010 = stringValueIgnoreCase(r, "sfaa010");
-                        // 同一品号的多张工单合并为一个列表（SQL 已按 sfaadocno 排序，结果确定）
                         if (!isBlank(item010)) {
-                            sfaaIndex.computeIfAbsent(item010, k -> new ArrayList<>()).add(r);
+                            directIndex.computeIfAbsent(item010, k -> new ArrayList<>()).add(r);
                         }
                     }
                 }
+
+                // 2) 关联工单计划排程档（sfahuc_t -> sfaa_t）—— 高优先级
+                List<Map<String, Object>> scheduleRows = dsdataMapper.querySfaaBySchedule(sfaaParams);
+                Map<String, List<Map<String, Object>>> scheduleIndex = new HashMap<>();
+                if (scheduleRows != null) {
+                    for (Map<String, Object> r : scheduleRows) {
+                        String item010 = stringValueIgnoreCase(r, "sfaa010");
+                        if (!isBlank(item010)) {
+                            scheduleIndex.computeIfAbsent(item010, k -> new ArrayList<>()).add(r);
+                        }
+                    }
+                }
+
+                // 3) 合并：优先取计划排程档；该品号无排程记录时退回直接关联工单
+                Set<String> allItems = new HashSet<>();
+                allItems.addAll(directIndex.keySet());
+                allItems.addAll(scheduleIndex.keySet());
+                for (String item : allItems) {
+                    List<Map<String, Object>> primary = scheduleIndex.get(item);
+                    if (primary != null && !primary.isEmpty()) {
+                        sfaaIndex.put(item, primary);
+                    } else {
+                        sfaaIndex.put(item, directIndex.get(item));
+                    }
+                }
+
                 System.out.println("[queryOrderBom] 工单索引: 订单号=" + docNo + ", 序号=" + seq
-                        + ", 工单条数=" + (sfaaRows == null ? 0 : sfaaRows.size())
-                        + ", 涉及品号数=" + sfaaIndex.size());
+                        + ", 排程档工单数=" + (scheduleRows == null ? 0 : scheduleRows.size())
+                        + ", 直接关联工单数=" + (sfaaRows == null ? 0 : sfaaRows.size())
+                        + ", 合并后品号数=" + sfaaIndex.size());
+
+                // 4) 该订单各品号已排工单数量（ypgds = sum(sfahuc003)），用于计算订单可排数量 ddkpsj
+                Map<String, Object> ypgdsParams = new HashMap<>();
+                ypgdsParams.put("sfahucent", ent);
+                ypgdsParams.put("sfahucsite", site);
+                ypgdsParams.put("sfahuc004", docNo);
+                if (!isBlank(seq)) {
+                    ypgdsParams.put("sfahuc005", seq);
+                }
+                List<Map<String, Object>> ypgdsRows = sfaaMapper.queryOrderScheduledQtyByItem(ypgdsParams);
+                if (ypgdsRows != null) {
+                    for (Map<String, Object> r : ypgdsRows) {
+                        String item002 = stringValueIgnoreCase(r, "sfahuc002");
+                        if (!isBlank(item002)) {
+                            ypgdsByItem.put(item002, toBigDecimal(getValueIgnoreCase(r, "ypgds")));
+                        }
+                    }
+                }
             }
 
             for (Map<String, Object> item : orderItems) {
@@ -2135,10 +2242,12 @@ public class  IndexController {
                 root.set("BOM用量", BigDecimal.ONE);
                 root.set("bmba010", "");
                 root.set("实际用量", BigDecimal.ONE);
-                root.set("订单需求用量", orderQty.setScale(2, RoundingMode.HALF_UP));
+                root.set("订单需求用量", orderQty.setScale(0, RoundingMode.HALF_UP));
                 root.set("level", 1);
                 // 关联工单（按生产料号 sfaa010 = 根节点品号匹配）
                 attachSfaaInfo(root, sfaaIndex, rootItem);
+                // 订单可排数量 ddkpsj = 订单需求用量 - 已排工单量(ypgds)，均取整数
+                attachDdkpsj(root, orderQty, ypgdsByItem, rootItem);
                 JSONArray children = new JSONArray();
                 root.set("children", children);
                 tree.add(root);
@@ -2147,6 +2256,7 @@ public class  IndexController {
                 JSONObject flatRoot = buildFlatNode(orderDocNo, orderSeq, rootItem, rootItem, "", rootItem,
                         BigDecimal.ONE, "", BigDecimal.ONE, orderQty, 1, shipDate);
                 attachSfaaInfo(flatRoot, sfaaIndex, rootItem);
+                attachDdkpsj(flatRoot, orderQty, ypgdsByItem, rootItem);
                 flatRoot.set("imaf013", rootIm013);
                 flatRoot.set("imaal003", rootImaal003);
                 flatRoot.set("imaal004", rootImaal004);
@@ -2157,7 +2267,30 @@ public class  IndexController {
 
                 // 从第一层 BOM 开始递归下展
                 expandBomTree(ent, site, orderDocNo, orderSeq, shipDate, rootItem, rootItem, BigDecimal.ONE, orderQty,
-                        children, flat, 2, new HashSet<>(), sfaaIndex, imaf013, lang);
+                        children, flat, 2, new HashSet<>(), sfaaIndex, ypgdsByItem, imaf013, xFlag, lang);
+            }
+
+            // 展开完成后：按 订单号+订单序号 合计所有「订单需求用量」，写入/更新 sfaguc_t.sfaguc003（需求总数）
+            // 该 订单号+订单序号 已存在则 update，否则 insert；写库失败不影响 BOM 结果返回
+            try {
+                Map<String, BigDecimal> demandByKey = new LinkedHashMap<>();
+                Map<String, String[]> keyParts = new LinkedHashMap<>();
+                for (int i = 0; i < flat.size(); i++) {
+                    JSONObject node = flat.getJSONObject(i);
+                    String orderNo = node.getStr("订单号");
+                    if (isBlank(orderNo)) continue;
+                    String orderSeq = node.getStr("订单序号");
+                    String key = orderNo + "|" + orderSeq;
+                    BigDecimal demandQty = toBigDecimal(node.get("订单需求用量"));
+                    demandByKey.merge(key, demandQty, BigDecimal::add);
+                    keyParts.putIfAbsent(key, new String[]{orderNo, orderSeq});
+                }
+                for (Map.Entry<String, BigDecimal> entry : demandByKey.entrySet()) {
+                    String[] p = keyParts.get(entry.getKey());
+                    upsertSfagucDemand(ent, site, p[0], p[1], entry.getValue());
+                }
+            } catch (Exception ex) {
+                System.out.println("[queryOrderBom] 汇总订单需求用量写入 sfaguc_t 失败: " + ex.getMessage());
             }
 
             result.set("success", true);
@@ -2185,12 +2318,14 @@ public class  IndexController {
      * @param level           当前层级（根为 1，向下递增）
      * @param path            当前递归路径，防止循环引用
      * @param sfaaIndex       工单索引（key = 生产料号 sfaa010），用于给节点附加工单信息
+     * @param xFlag           是否展示虚拟件：'N' = 不展示（虚拟件的下阶子件向上提升到最近的非虚拟件父级下）
      */
     private void expandBomTree(String ent, String site, String docNo, String seq, String shipDate,
                                String rootItem, String parentItem,
                                BigDecimal parentActualQty, BigDecimal orderQty,
                                JSONArray children, JSONArray flat, int level, Set<String> path,
-                               Map<String, List<Map<String, Object>>> sfaaIndex, String imaf013, String lang) {
+                               Map<String, List<Map<String, Object>>> sfaaIndex,
+                               Map<String, BigDecimal> ypgdsByItem, String imaf013, String xFlag, String lang) {
         if (path.contains(parentItem)) return;
         path.add(parentItem);
 
@@ -2199,6 +2334,9 @@ public class  IndexController {
             path.remove(parentItem);
             return;
         }
+        // x_flag='N'：虚拟件（imaa004='X'）不生成节点，其下阶子件向上提升一级；
+        // 若提升上来的子件仍是虚拟件，递归时会继续向上提升，直到遇到非虚拟件为止
+        boolean hideVirtual = "N".equalsIgnoreCase(String.valueOf(xFlag).trim());
 
         for (Map<String, Object> child : childRows) {
             String childItem = stringValueIgnoreCase(child, "bmba003");
@@ -2224,9 +2362,22 @@ public class  IndexController {
             BigDecimal actualQty = parentActualQty.multiply(bomQty)
                     .setScale(6, RoundingMode.HALF_UP)
                     .stripTrailingZeros();
-            // 订单需求用量 = 实际用量 * 订单数量，保留2位小数
+            // 订单需求用量 = 实际用量 * 订单数量，四舍五入取整
             BigDecimal demandQty = actualQty.multiply(orderQty)
-                    .setScale(2, RoundingMode.HALF_UP);
+                    .setScale(0, RoundingMode.HALF_UP);
+
+            // 虚拟件处理：imaa004='X' 表示该料号仅为一个编号、无实物。
+            // x_flag='N' 时不返回该节点，直接把它的下阶子件提升到当前层（即最近的非虚拟件父级之下）：
+            // 以「虚拟件的实际用量」作为父件用量、以「当前层 level/children」继续递归下展，
+            // 这样子件层级与虚拟件原层级一致，且实际用量仍按真实乘数链累计（A用量 × B用量 × C用量）。
+            // 若子件本身还是虚拟件，递归中会再次命中此分支，实现逐级向上提升。
+            String imaa004 = stringValueIgnoreCase(child, "imaa004");
+            boolean virtualChild = "X".equalsIgnoreCase(imaa004);
+            if (virtualChild && hideVirtual) {
+                expandBomTree(ent, site, docNo, seq, shipDate, rootItem, childItem, actualQty, orderQty,
+                        children, flat, level, path, sfaaIndex, ypgdsByItem, imaf013, xFlag, lang);
+                continue;
+            }
 
             JSONObject node = new JSONObject();
             node.set("订单号", docNo);
@@ -2248,8 +2399,12 @@ public class  IndexController {
             node.set("xmdd011", shipDate);
             node.set("imae035", stringValueIgnoreCase(child, "imae035"));
             node.set("imae035Name", stringValueIgnoreCase(child, "imae035Name"));
+            // 虚拟件标志（'X' = 虚拟件）
+            node.set("imaa004", imaa004);
             // 关联工单（按生产料号 sfaa010 = 元件品号 bmba003 匹配）
             attachSfaaInfo(node, sfaaIndex, childItem);
+            // 订单可排数量 ddkpsj = 订单需求用量 - 已排工单量(ypgds)，均取整数
+            attachDdkpsj(node, demandQty, ypgdsByItem, childItem);
             JSONArray subChildren = new JSONArray();
             node.set("children", subChildren);
             children.add(node);
@@ -2258,18 +2413,77 @@ public class  IndexController {
             JSONObject flatNode = buildFlatNode(docNo, seq, rootItem, parentNo, childSeq, childItem,
                     bomQty, childUnit, actualQty, demandQty, level, shipDate);
             attachSfaaInfo(flatNode, sfaaIndex, childItem);
+            attachDdkpsj(flatNode, demandQty, ypgdsByItem, childItem);
             flatNode.set("imaf013", stringValueIgnoreCase(child, "imaf013"));
             flatNode.set("imaal003", stringValueIgnoreCase(child, "imaal003"));
             flatNode.set("imaal004", stringValueIgnoreCase(child, "imaal004"));
             flatNode.set("imae035", stringValueIgnoreCase(child, "imae035"));
             flatNode.set("imae035Name", stringValueIgnoreCase(child, "imae035Name"));
+            flatNode.set("imaa004", imaa004);
             flat.add(flatNode);
 
             expandBomTree(ent, site, docNo, seq, shipDate, rootItem, childItem, actualQty, orderQty,
-                    subChildren, flat, level + 1, path, sfaaIndex, imaf013, lang);
+                    subChildren, flat, level + 1, path, sfaaIndex, ypgdsByItem, imaf013, xFlag, lang);
         }
 
         path.remove(parentItem);
+    }
+
+    /**
+     * 计算并设置订单可排数量 ddkpsj：
+     *   ddkpsj = round(订单需求用量, 0) - round(ypgds, 0)，两者均取整数
+     * ypgds 为该品号(sfahuc002)在完工申报档 sfahuc_t 中已排工单数量合计；未排过时取 0。
+     * ddkpsj <= 0 表示该品号订单行已排完（或已超额排产）。
+     */
+    private void attachDdkpsj(JSONObject node, BigDecimal demandQty,
+                              Map<String, BigDecimal> ypgdsByItem, String item) {
+        BigDecimal demand = (demandQty == null ? BigDecimal.ZERO : demandQty);
+        BigDecimal ypgds = ypgdsByItem.getOrDefault(item, BigDecimal.ZERO);
+        BigDecimal ddkpsj = demand.setScale(0, RoundingMode.HALF_UP)
+                .subtract(ypgds.setScale(0, RoundingMode.HALF_UP));
+        node.set("ddkpsj", ddkpsj.longValue());
+    }
+
+    /**
+     * 新增或更新 sfaguc_t 的「需求总数」sfaguc003（按 账套+据点+订单号+序号 定位）
+     * 记录不存在则新增（供给总数落 0），存在则只更新 sfaguc003，不触碰 sfaguc004
+     */
+    private void upsertSfagucDemand(String ent, String site, String docNo, String docSeq, BigDecimal demandTotal) {
+        if (isBlank(ent) || isBlank(site) || isBlank(docNo)) return;
+        sfaguc exist = sfagucMapper.findByEntSiteDocnoSeq(ent, site, docNo, docSeq);
+        sfaguc r = new sfaguc();
+        r.setSfagucent(ent);
+        r.setSfagucsite(site);
+        r.setSfaguc002(docNo);
+        r.setSfaguc005(docSeq);
+        r.setSfaguc003((demandTotal == null ? BigDecimal.ZERO : demandTotal).toPlainString());
+        if (exist == null) {
+            r.setSfaguc004("0");
+            sfagucMapper.insert(r);
+        } else {
+            sfagucMapper.updateDemand(r);
+        }
+    }
+
+    /**
+     * 新增或更新 sfaguc_t 的「供给总数」sfaguc004（按 账套+据点+订单号+序号 定位）
+     * 记录不存在则新增（需求总数落 0），存在则只更新 sfaguc004，不触碰 sfaguc003
+     */
+    private void upsertSfagucSupply(String ent, String site, String docNo, String docSeq, BigDecimal supplyTotal) {
+        if (isBlank(ent) || isBlank(site) || isBlank(docNo)) return;
+        sfaguc exist = sfagucMapper.findByEntSiteDocnoSeq(ent, site, docNo, docSeq);
+        sfaguc r = new sfaguc();
+        r.setSfagucent(ent);
+        r.setSfagucsite(site);
+        r.setSfaguc002(docNo);
+        r.setSfaguc005(docSeq);
+        r.setSfaguc004((supplyTotal == null ? BigDecimal.ZERO : supplyTotal).toPlainString());
+        if (exist == null) {
+            r.setSfaguc003("0");
+            sfagucMapper.insert(r);
+        } else {
+            sfagucMapper.updateSupply(r);
+        }
     }
 
     /** 构建扁平明细节点 */
@@ -2315,6 +2529,7 @@ public class  IndexController {
             node.set("sfaa020", "");
             node.set("sfaa012", "");
             node.set("sfaa050", "");
+            node.set("sfaa049", "");
             node.set("sfaastus", "");
             node.set("ooefl003", "");
             return;
@@ -2324,6 +2539,7 @@ public class  IndexController {
         String max020 = null;
         BigDecimal sum012 = BigDecimal.ZERO;
         BigDecimal sum050 = BigDecimal.ZERO;
+        BigDecimal sum049 = BigDecimal.ZERO;
         String first068 = "", firstStus = "", firstOoefl = "";
         for (int i = 0; i < list.size(); i++) {
             Map<String, Object> r = list.get(i);
@@ -2343,9 +2559,10 @@ public class  IndexController {
             if (!s020.isEmpty() && (max020 == null || s020.compareTo(max020) > 0)) {
                 max020 = s020;
             }
-            // D 生产数量求和、E 入库数量求和
+            // D 生产数量求和、E 入库数量求和、F 已发料套数求和
             sum012 = sum012.add(toBigDecimal(getValueIgnoreCase(r, "sfaa012")));
             sum050 = sum050.add(toBigDecimal(getValueIgnoreCase(r, "sfaa050")));
+            sum049 = sum049.add(toBigDecimal(getValueIgnoreCase(r, "sfaa049")));
             if (i == 0) {
                 first068 = stringValueIgnoreCase(r, "sfaa068");
                 firstStus = stringValueIgnoreCase(r, "sfaastus");
@@ -2359,6 +2576,7 @@ public class  IndexController {
         // 合计结果去掉多余小数 0，避免科学计数法（如 400.00 → 400）
         node.set("sfaa012", sum012.stripTrailingZeros().toPlainString());
         node.set("sfaa050", sum050.stripTrailingZeros().toPlainString());
+        node.set("sfaa049", sum049.stripTrailingZeros().toPlainString());
         node.set("sfaastus", firstStus);
         node.set("ooefl003", firstOoefl);
     }
@@ -2739,13 +2957,18 @@ public class  IndexController {
      *     "sfaasite": "NBYL",       // 可选，默认 NBYL
      *     "sfaa010": "18097818352", // 生产品号，必填
      *     "sfaastus": "M,F,N,C",    // 可选，逗号分隔；不传则不加该条件
-     *     "sfaa022": "来源单号",     // 可选，精确匹配；不传则不拼接
-     *     "sfaa023": "来源序号",     // 可选，精确匹配；不传则不拼接
+     *     "sfaa022": "来源单号",     // 可选；与 sfaa023 同时传入时，查 ERP 计划档得到「推荐/默认工单号」排到最前
+     *     "sfaa023": "来源序号",     // 可选；需与 sfaa022 同时传入才生效
      *     "sfaadocno": "工单号"       // 可选，精确匹配；不传则不拼接
      * }
      * 返回字段：sfaadocno(工单号)、sfaastus(工单状态码)、sfaa010(生产品号)、sfaa012(生产数量)、kpsl(可排数量)、
-     *          sfaa050(入库数量)、sfaa068(成本中心)、sfaa019(预计开工日期)、sfaa020(预计完工日期)
-     * 最多返回 30 条
+     *          sfaa050(入库数量)、sfaa068(成本中心)、sfaa019(预计开工日期)、sfaa020(预计完工日期)、
+     *          sfaa022(来源单号)、sfaa023(来源序号)、xmdd005(订单数量)、row_flag(是否默认行:1=推荐/默认,0=普通)
+     * 关联 xmdd_t（来源单号 sfaa022=订单号 xmdddocno、来源序号 sfaa023=订单序号 xmddseq）取订单数量；
+     * 仅返回「工单生产数量(sfaa012) 与 订单数量(xmdd005) 不一致」的工单（数量一致即已一对一关联好，不返回）
+     * 推荐逻辑：当同时传入 sfaa022+sfaa023 时，先取最新计划编号 max(pspc002)，再查计划档(pspa_t/psph_t)
+     *          得到与该来源单号/序号匹配的工单号集合（记录集A）；主查询命中记录集A的工单排到最前(row_flag=1)
+     * 不再限制返回条数（原 ROWNUM<=30 已移除），仅返回工单开立日期(sfaadocdt)在最近一年内的工单
      */
     @PostMapping("/querySchedulableWorkOrders")
     public JSONObject querySchedulableWorkOrders(@RequestBody Map<String, Object> request) {
@@ -2757,6 +2980,9 @@ public class  IndexController {
             String sfaasite = getString(request, "sfaasite");
             if (isBlank(sfaasite)) sfaasite = "NBYL";
             String sfaa010 = getString(request, "sfaa010");
+            // 来源单号/来源序号：同时传入时用于「推荐/默认工单」逻辑（查 ERP 计划档）
+            String sfaa022 = getString(request, "sfaa022");
+            String sfaa023 = getString(request, "sfaa023");
 
             if (isBlank(sfaa010)) {
                 result.set("success", false);
@@ -2770,12 +2996,173 @@ public class  IndexController {
             params.put("sfaa010", sfaa010);
             // 工单状态：可选，逗号分隔；空串/空白则不拼接
             putIfNotBlank(params, request, "sfaastus");
-            // 以下为可选精确匹配条件；空串/空白则不拼接
-            putIfNotBlank(params, request, "sfaa022");
-            putIfNotBlank(params, request, "sfaa023");
+            // 工单号精确匹配（可选）
             putIfNotBlank(params, request, "sfaadocno");
 
             List<Map<String, Object>> rows = sfaaMapper.listSchedulableByItem(params);
+
+            // 推荐工单号集合（记录集A）：仅当同时传入 sfaa022 与 sfaa023 才查计划档
+            //   第二步：最新计划编号 max(pspc002)
+            //   第三步：计划档 pspa_t/psph_t 中与该来源单号/序号匹配的工单号
+            // 推荐工单号集合（记录集A）：仅当同时传入 sfaa022 与 sfaa023 才查计划档
+            //   第二步：最新计划编号 max(pspc002)
+            //   第三步：计划档 pspa_t/psph_t 中与该来源单号/序号匹配的工单号
+            // 记录集A 中 工单号='库存'（库存供应，无对应工单）的行 -> 作为默认供应返回
+            List<String> planWoOrder = new ArrayList<>();
+            List<JSONObject> inventoryItems = new ArrayList<>();
+            if (!isBlank(sfaa022) && !isBlank(sfaa023)) {
+                Map<String, Object> p2 = new HashMap<>();
+                p2.put("ent", sfaaent);
+                p2.put("site", sfaasite);
+                String planNo = sfaaMapper.latestPlanNo(p2);
+                if (!isBlank(planNo)) {
+                    Map<String, Object> p3 = new HashMap<>();
+                    p3.put("ent", sfaaent);
+                    p3.put("site", sfaasite);
+                    p3.put("sfaa010", sfaa010);
+                    p3.put("planNo", planNo);
+                    p3.put("sfaa022", sfaa022);
+                    p3.put("sfaa023", sfaa023);
+                    List<Map<String, Object>> planRows = sfaaMapper.planWorkOrderNos(p3);
+                    if (planRows != null) {
+                        for (Map<String, Object> r : planRows) {
+                            String wo = stringValueIgnoreCase(r, "工单号").trim();
+                            if (wo.isEmpty()) {
+                                continue;
+                            }
+                            if ("库存".equals(wo)) {
+                                // 库存作为默认供应：sfaadocno="库存"，kpsl=可供给数量(psph026)，row_flag=1
+                                JSONObject inv = new JSONObject();
+                                inv.set("sfaadocno", "库存");
+                                inv.set("sfaa010", nvl(sfaa010));
+                                inv.set("sfaa012", "");
+                                inv.set("kpsl", nvl(getValueIgnoreCase(r, "可供给数量")));
+                                inv.set("sfaa050", "");
+                                inv.set("sfaa068", "");
+                                inv.set("sfaastus", "");
+                                inv.set("sfaa019", "");
+                                inv.set("sfaa020", "");
+                                inv.set("sfaa022", nvl(sfaa022));
+                                inv.set("sfaa023", nvl(sfaa023));
+                                inv.set("xmdd005", "");
+                                inv.set("row_flag", 1);
+                                inventoryItems.add(inv);
+                            } else if (!planWoOrder.contains(wo)) {
+                                planWoOrder.add(wo);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (rows != null) {
+                // 先按工单号建索引，全部默认 row_flag=0
+                Map<String, JSONObject> itemByWo = new LinkedHashMap<>();
+                for (Map<String, Object> row : rows) {
+                    JSONObject item = new JSONObject();
+                    item.set("sfaadocno", getValueIgnoreCase(row, "sfaadocno"));
+                    item.set("sfaa010", getValueIgnoreCase(row, "sfaa010"));
+                    item.set("sfaa012", getValueIgnoreCase(row, "sfaa012"));
+                    item.set("kpsl", getValueIgnoreCase(row, "kpsl"));
+                    item.set("sfaa050", getValueIgnoreCase(row, "sfaa050"));
+                    item.set("sfaa068", getValueIgnoreCase(row, "sfaa068"));
+                    item.set("sfaastus", getValueIgnoreCase(row, "sfaastus"));
+                    item.set("sfaa019", formatDate(getValueIgnoreCase(row, "sfaa019")));
+                    item.set("sfaa020", formatDate(getValueIgnoreCase(row, "sfaa020")));
+                    item.set("sfaa022", nvl(getValueIgnoreCase(row, "sfaa022")));
+                    item.set("sfaa023", nvl(getValueIgnoreCase(row, "sfaa023")));
+                    item.set("xmdd005", getValueIgnoreCase(row, "xmdd005"));
+                    item.set("row_flag", 0);
+                    String wo = stringValueIgnoreCase(row, "sfaadocno").trim();
+                    itemByWo.put(wo, item);
+                }
+                // 命中记录集A的工单排到最前（保持计划档顺序），并标记 row_flag=1
+                // 库存默认供应记录（sfaadocno='库存'）也作为默认记录排到最前
+                List<JSONObject> front = new ArrayList<>();
+                front.addAll(inventoryItems);
+                for (String wo : planWoOrder) {
+                    JSONObject it = itemByWo.remove(wo);
+                    if (it != null) {
+                        it.set("row_flag", 1);
+                        front.add(it);
+                    }
+                }
+                master.addAll(front);
+                master.addAll(itemByWo.values());
+            }
+
+            result.set("success", true);
+            result.set("master", master);
+            result.set("total", master.size());
+        } catch (Exception e) {
+            result.set("success", false);
+            result.set("message", e.getMessage());
+            result.set("cause", e.getCause() != null ? e.getCause().getMessage() : "");
+            e.printStackTrace();
+        }
+        return result;
+    }
+
+    /**
+     * 根据「来源单号(sfaa022) + 来源序号(sfaa023) + 品号(sfaa010)」查询对应的工单信息
+     * 用于前端按「订单 + 序号 + 品号」关联对应的工单
+     * 前端 POST /queryWorkOrderBySource
+     * 请求体 JSON 示例：
+     * {
+     *     "token": "xxx",
+     *     "sfaaent": "60",          // 可选，默认 60
+     *     "sfaasite": "NBYL",       // 可选，默认 NBYL
+     *     "sfaa022": "来源单号",     // 必填
+     *     "sfaa023": "来源序号",     // 必填
+     *     "sfaa010": "品号",         // 必填
+     *     "sfaastus": "M,F,N,C"     // 可选，工单状态逗号分隔；不传则不限制状态
+     * }
+     * 返回字段（master 数组）：sfaadocno(工单号)、sfaa010(生产品号)、sfaa012(生产数量)、kpsl(可排数量)、
+     *          sfaa050(入库数量)、sfaa068(成本中心)、sfaastus(工单状态码)、sfaa019(预计开工日期)、
+     *          sfaa020(预计完工日期)、sfaa022(来源单号)、sfaa023(来源序号)
+     * 注意：与 querySchedulableWorkOrders 不同，本接口以来源单号/来源序号为主过滤条件，
+     *       且不过滤已排完的工单、不限制工单开立日期，目的是把「已与该订单行关联」的工单都返回供前端关联
+     */
+    @PostMapping("/queryWorkOrderBySource")
+    public JSONObject queryWorkOrderBySource(@RequestBody Map<String, Object> request) {
+        JSONObject result = new JSONObject();
+        JSONArray master = new JSONArray();
+        try {
+            String sfaaent = getString(request, "sfaaent");
+            if (isBlank(sfaaent)) sfaaent = "60";
+            String sfaasite = getString(request, "sfaasite");
+            if (isBlank(sfaasite)) sfaasite = "NBYL";
+            String sfaa022 = getString(request, "sfaa022");
+            String sfaa023 = getString(request, "sfaa023");
+            String sfaa010 = getString(request, "sfaa010");
+
+            if (isBlank(sfaa022)) {
+                result.set("success", false);
+                result.set("message", "sfaa022(来源单号)不能为空");
+                return result;
+            }
+            if (isBlank(sfaa023)) {
+                result.set("success", false);
+                result.set("message", "sfaa023(来源序号)不能为空");
+                return result;
+            }
+            if (isBlank(sfaa010)) {
+                result.set("success", false);
+                result.set("message", "sfaa010(品号)不能为空");
+                return result;
+            }
+
+            Map<String, Object> params = new HashMap<>();
+            params.put("sfaaent", sfaaent);
+            params.put("sfaasite", sfaasite);
+            params.put("sfaa010", sfaa010);
+            params.put("sfaa022", sfaa022);
+            params.put("sfaa023", sfaa023);
+            // 工单状态：可选，逗号分隔；空串/空白则不拼接
+            putIfNotBlank(params, request, "sfaastus");
+
+            List<Map<String, Object>> rows = sfaaMapper.listBySourceOrderItem(params);
+
             if (rows != null) {
                 for (Map<String, Object> row : rows) {
                     JSONObject item = new JSONObject();
@@ -2788,6 +3175,8 @@ public class  IndexController {
                     item.set("sfaastus", getValueIgnoreCase(row, "sfaastus"));
                     item.set("sfaa019", formatDate(getValueIgnoreCase(row, "sfaa019")));
                     item.set("sfaa020", formatDate(getValueIgnoreCase(row, "sfaa020")));
+                    item.set("sfaa022", nvl(getValueIgnoreCase(row, "sfaa022")));
+                    item.set("sfaa023", nvl(getValueIgnoreCase(row, "sfaa023")));
                     master.add(item);
                 }
             }

@@ -103,7 +103,18 @@ public class OrderSqlProvider {
                 WHERE("ooag011 like '%' || #{ooag011} || '%'");
             }
             if (hasText(imaf013)) {
-                WHERE("imaf013 = #{imaf013}");
+                // 支持逗号分隔多项：'1,2,3' → imaf013 IN ('1','2','3')
+                // 每个 token 仅允许字母数字（白名单），避免 SQL 注入；空白 token 跳过
+                StringBuilder inSql = new StringBuilder();
+                for (String token : imaf013.split(",")) {
+                    String c = token.trim();
+                    if (c.isEmpty() || !c.matches("[0-9A-Za-z]+")) continue;
+                    if (inSql.length() > 0) inSql.append(", ");
+                    inSql.append("'").append(c).append("'");
+                }
+                if (inSql.length() > 0) {
+                    WHERE("imaf013 IN (" + inSql + ")");
+                }
             }
             if (hasText(d011Start)) {
                 WHERE("xmdd011 >= TO_DATE(#{xmdd011_start}, 'YYYY-MM-DD')");

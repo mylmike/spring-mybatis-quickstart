@@ -47,6 +47,8 @@ public class BomSqlProvider {
             SELECT("b.bmbb011");
             // 关联品号基本资料 imaf_t，取出补货策略 imaf013（1=采购/2=自制/...）
             SELECT("f.imaf013 AS imaf013");
+            // 关联品号主档 imaa_t，取出虚拟件标志 imaa004（'X' = 虚拟件）
+            SELECT("v.imaa004 AS imaa004");
             // 关联品号描述 imaal_t，取出品名/规格（按语言）
             SELECT("al.imaal003 AS imaal003");
             SELECT("al.imaal004 AS imaal004");
@@ -60,6 +62,8 @@ public class BomSqlProvider {
                     "AND b.bmbb001 = m.bmba001 AND b.bmbb002 = m.bmba002 AND b.bmbb003 = m.bmba003 " +
                     "AND b.bmbb004 = m.bmba004 AND b.bmbb005 = m.bmba005");
             LEFT_OUTER_JOIN("imaf_t f ON f.imafent = #{ent} AND f.imafsite = #{site} AND f.imaf001 = m.bmba003");
+            // 关联品号主档 imaa_t，取虚拟件标志 imaa004（'X' = 虚拟件，仅编号无实物）
+            LEFT_OUTER_JOIN("imaa_t v ON v.imaaent = #{ent} AND v.imaa001 = m.bmba003");
             // 关联品号描述多语言表（按语言 lang 取品名/规格）
             LEFT_OUTER_JOIN("imaal_t al ON al.imaalent = #{ent} AND al.imaal002 = #{lang} AND al.imaal001 = m.bmba003");
             // 关联物料基础信息 imae_t（默认成本中心），imae001 = 元件品号 bmba003
@@ -74,10 +78,12 @@ public class BomSqlProvider {
             // 过滤已失效的 BOM 单身：bmba006（失效日期）必须为 NULL
             WHERE("m.bmba006 IS NULL");
             // 补货策略过滤：仅当传入 imaf013='2'（自制件）时返回自制件子件；
-            // 自制件含 imaf013='2' 与 imaf013='3' 两类，故条件为 IN ('2','3')；其余情况展开返回所有
+            // 自制件含 imaf013='2' 与 imaf013='3' 两类，故条件为 IN ('2','3')；其余情况展开返回所有。
+            // 虚拟件（imaa004='X'）不受此限制：虚拟件只是编号、通常无补货策略，
+            // 若被过滤掉会导致其下阶子件整条链路丢失，故此处放行，由 Java 侧决定是否隐藏。
             Object imaf013 = params.get("imaf013");
             if (imaf013 != null && "2".equals(String.valueOf(imaf013).trim())) {
-                WHERE("f.imaf013 IN ('2', '3')");
+                WHERE("(f.imaf013 IN ('2', '3') OR NVL(v.imaa004, ' ') = 'X')");
             }
             ORDER_BY("m.bmba009");
         }}.toString();

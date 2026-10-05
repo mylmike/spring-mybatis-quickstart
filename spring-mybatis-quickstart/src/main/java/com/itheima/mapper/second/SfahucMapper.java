@@ -1,14 +1,9 @@
 package com.itheima.mapper.second;
 
 import com.itheima.pojo.sfahuc;
-import org.apache.ibatis.annotations.DeleteProvider;
-import org.apache.ibatis.annotations.Insert;
-import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
-import org.apache.ibatis.annotations.SelectProvider;
-import org.apache.ibatis.annotations.Update;
+import org.apache.ibatis.annotations.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -61,14 +56,28 @@ public interface SfahucMapper {
                                     @Param("sfahuc001") String sfahuc001,
                                     @Param("sfahuc002") String sfahuc002);
 
+    /**
+     * 按 订单号+订单序号 汇总该订单在 sfahuc_t 的排程数量合计 SUM(sfahuc016)（供给总数）
+     * 条件：sfahucent=账套 and sfahucsite=据点 and sfahuc004=订单号 and sfahuc005=订单序号
+     * 用于 saveSfahuc 保存后回写 sfaguc_t.sfaguc004
+     */
+    @Select("select NVL(SUM(sfahuc016),0) from sfahuc_t " +
+            "where sfahucent=TO_NUMBER(#{sfahucent}) and sfahucsite=#{sfahucsite} " +
+            "and sfahuc004=#{sfahuc004} and sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},''))")
+    BigDecimal sumScheduleQtyByOrderSeq(@Param("sfahucent") String sfahucent,
+                                        @Param("sfahucsite") String sfahucsite,
+                                        @Param("sfahuc004") String sfahuc004,
+                                        @Param("sfahuc005") String sfahuc005);
+
     @Insert("insert into sfahuc_t " +
-            "(sfahucent,sfahucsite,sfahucdocno,sfahucseq,sfahuc001,sfahuc002,sfahuc003,sfahuc004,sfahuc005,sfahuc006,sfahuc007,sfahuc008,sfahuc009,sfahuc010,sfahuc011,sfahuc012,sfahuc013,sfahuc014,sfahuc015) " +
+            "(sfahucent,sfahucsite,sfahucdocno,sfahucseq,sfahuc001,sfahuc002,sfahuc003,sfahuc004,sfahuc005,sfahuc006,sfahuc007,sfahuc008,sfahuc009,sfahuc010,sfahuc011,sfahuc012,sfahuc013,sfahuc014,sfahuc015,sfahuc016,sfahucstus,sfahuccrtdt,sfahuccrtid) " +
             "values (" +
             "TO_NUMBER(#{sfahucent}),#{sfahucsite},#{sfahucdocno},TO_NUMBER(NULLIF(#{sfahucseq},''))," +
             "#{sfahuc001},#{sfahuc002},TO_NUMBER(NULLIF(#{sfahuc003},'')),#{sfahuc004},TO_NUMBER(NULLIF(#{sfahuc005},''))," +
             "TO_DATE(SUBSTR(NULLIF(#{sfahuc006},''),1,10),'YYYY-MM-DD'),TO_DATE(SUBSTR(NULLIF(#{sfahuc007},''),1,10),'YYYY-MM-DD'),#{sfahuc008},TO_NUMBER(NULLIF(#{sfahuc009},''))," +
             "#{sfahuc010,jdbcType=VARCHAR},TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},''))," +
-            "TO_NUMBER(NULLIF(#{sfahuc012},'')),TO_NUMBER(NULLIF(#{sfahuc013},'')),TO_NUMBER(NULLIF(#{sfahuc014},'')),TO_NUMBER(NULLIF(#{sfahuc015},'')))")
+            "TO_NUMBER(NULLIF(#{sfahuc012},'')),TO_NUMBER(NULLIF(#{sfahuc013},'')),TO_NUMBER(NULLIF(#{sfahuc014},'')),TO_NUMBER(NULLIF(#{sfahuc015},'')),TO_NUMBER(NULLIF(#{sfahuc016,jdbcType=VARCHAR},''))," +
+            "NVL(#{sfahucstus},'N'),sysdate,#{sfahuccrtid})")
     int insert(sfahuc record);
 
     @Update("update sfahuc_t set " +
@@ -78,7 +87,7 @@ public interface SfahucMapper {
             "sfahuc004=#{sfahuc004},sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},''))," +
             "sfahuc006=TO_DATE(SUBSTR(NULLIF(#{sfahuc006},''),1,10),'YYYY-MM-DD'),sfahuc007=TO_DATE(SUBSTR(NULLIF(#{sfahuc007},''),1,10),'YYYY-MM-DD')," +
             "sfahuc008=#{sfahuc008,jdbcType=VARCHAR},sfahuc009=TO_NUMBER(NULLIF(#{sfahuc009,jdbcType=VARCHAR},'')),sfahuc010=#{sfahuc010,jdbcType=VARCHAR},sfahuc011=TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},''))," +
-            "sfahuc012=TO_NUMBER(NULLIF(#{sfahuc012},'')),sfahuc013=TO_NUMBER(NULLIF(#{sfahuc013},'')),sfahuc014=TO_NUMBER(NULLIF(#{sfahuc014},'')),sfahuc015=TO_NUMBER(NULLIF(#{sfahuc015},'')) " +
+            "sfahuc012=TO_NUMBER(NULLIF(#{sfahuc012},'')),sfahuc013=TO_NUMBER(NULLIF(#{sfahuc013},'')),sfahuc014=TO_NUMBER(NULLIF(#{sfahuc014},'')),sfahuc015=TO_NUMBER(NULLIF(#{sfahuc015},'')),sfahuc016=TO_NUMBER(NULLIF(#{sfahuc016,jdbcType=VARCHAR},'')) " +
             "where sfahucdocno=#{sfahucdocno} and sfahucseq=TO_NUMBER(#{sfahucseq})")
     int update(sfahuc record);
 
@@ -87,16 +96,7 @@ public interface SfahucMapper {
      * 主键四列（sfahucent + sfahucsite + sfahuc001 + sfahuc002），用于精确定位到单行
      * 注意：set 中【不包含】主键字段，避免把多行改成相同主键导致 ORA-00001
      */
-    @Update("update sfahuc_t set " +
-            "sfahucdocno=#{sfahucdocno},sfahucseq=TO_NUMBER(NULLIF(#{sfahucseq},''))," +
-            "sfahuc003=TO_NUMBER(NULLIF(#{sfahuc003},''))," +
-            "sfahuc004=#{sfahuc004},sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},''))," +
-            "sfahuc006=TO_DATE(SUBSTR(NULLIF(#{sfahuc006},''),1,10),'YYYY-MM-DD'),sfahuc007=TO_DATE(SUBSTR(NULLIF(#{sfahuc007},''),1,10),'YYYY-MM-DD')," +
-            "sfahuc008=#{sfahuc008},sfahuc009=TO_NUMBER(NULLIF(#{sfahuc009},''))," +
-            "sfahuc010=#{sfahuc010,jdbcType=VARCHAR},sfahuc011=TO_NUMBER(NULLIF(#{sfahuc011,jdbcType=VARCHAR},''))," +
-            "sfahuc012=TO_NUMBER(NULLIF(#{sfahuc012},'')),sfahuc013=TO_NUMBER(NULLIF(#{sfahuc013},'')),sfahuc014=TO_NUMBER(NULLIF(#{sfahuc014},'')),sfahuc015=TO_NUMBER(NULLIF(#{sfahuc015},'')) " +
-            "where sfahucent=TO_NUMBER(#{sfahucent}) and sfahucsite=#{sfahucsite} " +
-            "and sfahuc001=#{sfahuc001} and sfahuc002=#{sfahuc002}")
+    @UpdateProvider(type = SfahucSqlProvider.class, method = "updateByPk")
     int updateByPk(sfahuc record);
 
     /**

@@ -3,19 +3,21 @@
 ## 项目概览
 - **查询条件空值约定（用户明确要求）**：前端传入的查询条件若为 空串 / 纯空白，一律视为「该项条件未设置」，后端**不得**拼接 `where 字段=''`。建议统一在 SQL Provider 的 Java 侧做 `trim().isEmpty()` 判断，避免使用注解内 OGNL `<if test='x != ""'>`（无法处理纯空白）。
 - Spring Boot + MyBatis 项目，多数据源架构（primary=ecology/Oracle, second=dsdata/Oracle, third=SRM）
+- **JDK 17**（maven.compiler source/target=17）。注意：JDK 11+ 已移除 `wsimport`；若要调用泛微 SOAP WebService，需用 JDK8 的 wsimport 生成客户端或 `jaxws-maven-plugin`，并加 `com.sun.xml.ws:jaxws-rt:2.3.7` 依赖（JDK17 不再内置 javax.xml.ws）
 - Controller 直调 Mapper，无 Service 层
 - SQL 使用 @SelectProvider 或 @Select 注解，动态 SQL 用 org.apache.ibatis.jdbc.SQL
 - **【坑 2026-09-11】`@SelectProvider` 里 `#{}` 的键名必须与 Controller 放进 map 的键一一核对**。Map 参数取不到键时 MyBatis **不报错、绑定 NULL**，导致 where 条件恒不成立（如 `字段 = NULL`）而接口正常返回，极难排查。曾出现 SQL 用 `#{sfahucent}`/`#{sfahucsite}` 而 Controller 只放了 `sfaaent`/`sfaasite`，导致子查询零匹配。
 - 返回格式统一为 Hutool JSONObject/JSONArray
 - 所有 POST 接口（除 /auth）需要 token 参数
 - **token 传参**（`TokenFilter`，urlPatterns="/*"）：取值顺序 URL 参数 → 请求体 JSON 顶层 `token`（数组则取首元素）。约定放请求体顶层，与 `list` 平级
+- **【坑 2026-09-24】token 是写死在 `TokenFilter` 的固定常量口令（`e6338a4acxw502kmf5dwr316ss8u0ymb`），所有请求共用同一值，不含任何用户身份**。切勿把 token 当操作人/用户账号使用；需要记录操作人（如 sfahuccrtid/sfahucmodid）时，必须由前端额外传入 `userid`（当前登录账号），或等真正用户登录机制做好后从登录态取。
 - **部署方式（重要）**：改 Java 代码后必须 `mvn clean package -DskipTests` 重新打包，部署 `target/snapshot.war` 才生效。
   - 曾因只改源码未重新打包，线上跑旧代码，导致字段取 null 被 `isBlank` 静默 `continue`，返回计数全 0 且不报错，排查很久
   - 判断线上代码版本的方法：在返回 JSON 里加新字段（如 `receivedCount`），看响应里有没有
   - 类路径：开发用 `target/classes/...`，war 内嵌为 `target/snapshot/WEB-INF/classes/...`（最终部署以 war 内为准）
 
 ## 数据源
-- primary: ecology (Oracle 192.168.0.81:1521/TOPPRD) - 核心ERP表（glaq_t, glap_t, glacl_t, ooefl_t等）
+- primary: ecology (Oracle 192.168.0.81:1521/TOPPRD) - **泛微 OA e9** 核心ERP表（glaq_t, glap_t, glacl_t, ooefl_t等）。注意 ecology 同时是泛微 OA 系统，跨系统对接（创建工作流、同步人员）可走其 WebService/OpenAPI，或直查其库
 - second: dsdata (Oracle 192.168.0.81:1521/TOPPRD) - 预算表（bgbsuc_t、bgbtuc_t等）
 - 跨数据源查询在 Java 层 JOIN
 - **【默认约定 2026-09-01 用户明确】后续所有新增表/功能，若未特别说明数据源，一律默认在 dsdata（second）下，Mapper 一律放 `com.itheima.mapper.second` 包**
@@ -66,8 +68,14 @@
 - **主键**：`sfahucent` + `sfahucsite` + `sfahuc001` + `sfahuc002`。
 - **`sfahuc010` = 产线（VARCHAR2，2026-09-08 最终决定）**：曾用订单需求量后改回，现仍为产线字符型，可传 "五金组" 等文本。
 - **`sfahuc011` = 订单需求数量（NUMBER，2026-09-08 新增）**：原计划用 sfahuc010 表示，因类型冲突改为新增列。前端传数值字符串或空。注意与 sfajuc_t 的「产线 sfajuc004」区分。
+- **`sfahuc015` = 日产量（计算值，非落库语义字段）**：`人数(sfahuc012) × 工作时长(sfahuc013) × UPPH(sfahuc014)`，由 Controller 在 saveSfahuc 计算写入、在 querySfahuc 计算返回（覆盖 DB 列原值）。DB 列 sfahuc015 实际存的是该计算值。
+- **`sfahuc016` = 排程数量（NUMBER，2026-09-30 新增）**：**前端传入**、落库并返回，与 sfahuc015 日产量互不冲突（用户明确：sfahuc015 保留日产量，排程数量用新列 sfahuc016）。`saveSfahuc` 的 insert/update/updateByPk 均含该列；`querySfahuc` 返回 `sfahuc016`。**数据库须先建列** `ALTER TABLE dsdata.sfahuc_t ADD (sfahuc016 NUMBER);` 否则 insert/update ORA-00904。
 - **sfahuc 写入不落库修复（2026-09-08）**：原 `second` 数据源缺 `PlatformTransactionManager`，`saveSfahuc` 已加 `@Transactional("secondTransactionManager")`（事务管理器 bean 在 `SecondDataSourceConfig`）。返回新增 `verifiedCount` 自检落库。改后必须重新打包 war。
 - **`second` 数据源登录用户是 `dsdata`**（非 ecology），`sfahuc_t` 实际在 `dsdata` 用户下；若用 ecology 用户查会看不到，请用 dsdata 用户查 `dsdata.sfahuc_t`。
+- **【坑 2026-09-25】`sfahuc_t` 实际没有 `sfahucstus` 列**（saveSfahuc 的 insert 注解引用了它，但建表时未加），导致 ORA-00904。需执行 `ALTER TABLE dsdata.sfahuc_t ADD (sfahucstus VARCHAR2(20));` 加列后方可保存成功；加列后无需重新打包 Java（部署的 war 已含该列引用）。涉及新表/新列时，Mapper SQL 引用的列必须先在库里建好。
+- **`sfahucstus` 审核标志（2026-09-25 规则）**：`N`=未审核、`Y`=已审核。新增时默认 `N`（除非前端明确传 `Y`）；更新时前端未传 `sfahucstus` 则保持原行状态不变（`SfahucMapper.updateByPk` 已改为 `@UpdateProvider` 动态 SQL，仅在传入非空时 set 该列；Controller 在 update 分支把 record 置 null 实现不更新）。
+- **【环境坑 2026-09-25】命令行 `JAVA_HOME` 默认是 JDK 11（`E:\jdk-11.0.15`）**，直接 `mvn clean package` 报「无效的目标发行版：17」。打包前须临时切换：PowerShell `$env:JAVA_HOME="E:\jdk-17.0.20.1"; mvn clean package -DskipTests`。另：IDEA 报「找不到符号」但命令行编译 BUILD SUCCESS 时，多为 IDEA 增量编译缓存问题，Rebuild Project 即可。
+- **【坑 2026-09-25】`SfaaSqlProvider.syncSfaaFromSfahuc` 回写 sfaa019/020 日期时，源值可能带时分秒（如 `2026-10-18 00:00:00`），`TO_DATE(#{sd},'YYYY-MM-DD')` 会 ORA-01830。已统一改用 `TO_DATE(SUBSTR(#{sd},1,10),'YYYY-MM-DD')` 截取前10位。** 凡是把 sfahuc 日期同步回 sfaa 的 SQL，日期参数一律 `SUBSTR(...,1,10)` 再 TO_DATE。
 
 ## 2026-08-25 新增功能
 - 管理系统菜单目录树接口 `/queryMenuTree`
@@ -75,3 +83,10 @@
   - 查询条件：`ent`（默认 60）
   - 返回字段：`gzweuc001`（上阶目录编号）、`gzweuc002`（目录编号）、`gzweuc003`（显示顺序）、`gzweuc004`（菜单名称）+ 递归 `children`
   - 树形构建逻辑：`gzweuc001` 为空、上阶目录编号不存在于结果集、或上阶目录等于自身编号（顶层自引用如 000）时视为根节点，按 `gzweuc003` 排序
+
+## sfaguc_t 订单需求/供给汇总（2026-09-30 新增）
+- 表 `sfaguc_t`（dsdata/tip-top 已存在）：PK = `sfagucent`(企业代码 NUMBER,默认60) + `sfagucsite`(营运据点 VARCHAR2,默认NBYL) + `sfaguc002`(订单号 VARCHAR2) + `sfaguc005`(序号/订单序号 NUMBER10,0)。`sfaguc003`=需求总数(NUMBER20,6)、`sfaguc004`=供给总数(NUMBER20,6)。
+- **需求总数 sfaguc003**：`queryOrderBom` 展开完 BOM 后，按 `flat` 各行的 `订单号`+`订单序号` 合计所有「订单需求用量」（**含根节点**）后 upsert。
+- **供给总数 sfaguc004**：`saveSfahuc` 保存后，对每个 订单号+订单序号 `sum(sfahuc016) from sfahuc_t where sfahucent=ent and sfahucsite=site and sfahuc004=订单号 and sfahuc005=订单序号`，upsert 回写。
+- 代码：`com.itheima.pojo.sfaguc`；`com.itheima.mapper.second.SfagucMapper`（findByEntSiteDocnoSeq / insert / updateDemand 仅改 sfaguc003 / updateSupply 仅改 sfaguc004，定位条件均含 sfaguc005）；`SfahucMapper.sumScheduleQtyByOrderSeq(ent,site,orderNo,orderSeq)`；Controller 注入 `sfagucMapper` + 私有 `upsertSfagucDemand`/`upsertSfagucSupply`（各含 docSeq 参数，存在则 update、不存在则 insert，update 只改目标列）。
+- 容错：queryOrderBom 的 sfaguc 写入 try/catch 包裹不影响 BOM 返回；saveSfahuc 回写失败记录到返回字段 `sfagucMsg`，避免 @Transactional 回滚 sfahuc 保存。

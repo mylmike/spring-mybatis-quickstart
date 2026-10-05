@@ -45,6 +45,15 @@
               <el-input v-model="form.itemNo" clearable @keyup.enter="loadBomTree" />
             </el-form-item>
           </el-col>
+          <el-col :span="6">
+            <!-- x_flag：是否展示虚拟件（imaa004='X'）。不展示时其下阶子件自动向上提升 -->
+            <el-form-item label="虚拟件">
+              <el-select v-model="form.xFlag" style="width: 100%;">
+                <el-option label="展示" value="Y" />
+                <el-option label="不展示" value="N" />
+              </el-select>
+            </el-form-item>
+          </el-col>
         </el-row>
         <el-row>
           <el-col :span="24">
@@ -134,6 +143,7 @@
         </el-table-column>
         <el-table-column prop="sfaa012" label="生产数量" width="100" align="right" />
         <el-table-column prop="sfaa050" label="入库数量" width="100" align="right" />
+        <el-table-column prop="sfaa049" label="已发料套数" width="100" align="right" />
         <el-table-column prop="sfaastus" label="状态码" width="80" align="center" :formatter="formatStatus" />
         <el-table-column prop="upph" label="UPPH" width="80" align="right" />
       </el-table>
@@ -155,7 +165,9 @@ const form = reactive({
   estimatedDate: '',
   site: 'NBYL',
   enterpriseCode: '60',
-  itemNo: ''
+  itemNo: '',
+  // 是否展示虚拟件：'Y' 展示（默认）/ 'N' 不展示（下阶子件向上提升）
+  xFlag: 'Y'
 })
 
 /** BOM 结构树数据 */
@@ -284,7 +296,8 @@ const loadBomTree = async () => {
     const res = await fetchBomTree({
       xmdddocno: form.customerOrderNo,
       xmdd001: form.itemNo,
-      xmddseq: form.orderSeq
+      xmddseq: form.orderSeq,
+      x_flag: form.xFlag
     })
     const rawTree = res.data?.tree ?? res.data?.data?.tree ?? []
     treeSeq = 0
@@ -380,6 +393,7 @@ const loadBomTree = async () => {
 .basic-form :deep(.el-input),
 .basic-form :deep(.el-date-picker),
 .basic-form :deep(.el-date-editor),
+.basic-form :deep(.el-select),
 .basic-form :deep(.el-select-v2),
 .basic-form :deep(.el-button) {
   font-size: 12px;
@@ -387,6 +401,7 @@ const loadBomTree = async () => {
 
 /* 文本框 / 选择框 高度 20px */
 .basic-form :deep(.el-input__wrapper),
+.basic-form :deep(.el-select__wrapper),
 .basic-form :deep(.el-select-v2__wrapper),
 .basic-form :deep(.el-date-editor.el-input__wrapper) {
   min-height: 20px;

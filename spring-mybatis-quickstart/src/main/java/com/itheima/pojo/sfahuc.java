@@ -19,11 +19,19 @@ public class sfahuc {
 
     private String sfaastus;    // 工单结案状态（取自 sfaa_t，LEFT JOIN 工单主表）
     private String sfaa050;     // 入库数量（取自 sfaa_t）
+    private String sfaa049;     // 已发料套数（取自 sfaa_t）
     private String yuLiang;     // 余量 = sfaa012 - sfaa050（取自 sfaa_t）
     private String sfahuc012;   // 人数
     private String sfahuc013;   // 工作时长
     private String sfahuc014;   // UPPH值
     private String sfahuc015;   // 日产量 = sfahuc012 * sfahuc013 * sfahuc014
+    private String sfahuc016;   // 排程数量（前端传入）
+
+    private String sfahucstus;  // 状态码
+    private String sfahuccrtdt; // 创建日期时间
+    private String sfahuccrtid; // 创建人（userid）
+    private String sfahucmoddt; // 修改日期时间
+    private String sfahucmodid; // 修改人（userid）
 
     public String getSfahucent() { return sfahucent; }
     public void setSfahucent(String sfahucent) { this.sfahucent = sfahucent; }
@@ -85,8 +93,25 @@ public class sfahuc {
     public String getSfahuc015() { return sfahuc015; }
     public void setSfahuc015(String sfahuc015) { this.sfahuc015 = sfahuc015; }
 
+    public String getSfahuc016() { return sfahuc016; }
+    public void setSfahuc016(String sfahuc016) { this.sfahuc016 = sfahuc016; }
+
+    public String getSfahucstus() { return sfahucstus; }
+    public void setSfahucstus(String sfahucstus) { this.sfahucstus = sfahucstus; }
+    public String getSfahuccrtdt() { return sfahuccrtdt; }
+    public void setSfahuccrtdt(String sfahuccrtdt) { this.sfahuccrtdt = sfahuccrtdt; }
+    public String getSfahuccrtid() { return sfahuccrtid; }
+    public void setSfahuccrtid(String sfahuccrtid) { this.sfahuccrtid = sfahuccrtid; }
+    public String getSfahucmoddt() { return sfahucmoddt; }
+    public void setSfahucmoddt(String sfahucmoddt) { this.sfahucmoddt = sfahucmoddt; }
+    public String getSfahucmodid() { return sfahucmodid; }
+    public void setSfahucmodid(String sfahucmodid) { this.sfahucmodid = sfahucmodid; }
+
     public String getSfaa050() { return sfaa050; }
     public void setSfaa050(String sfaa050) { this.sfaa050 = sfaa050; }
+
+    public String getSfaa049() { return sfaa049; }
+    public void setSfaa049(String sfaa049) { this.sfaa049 = sfaa049; }
 
     public String getYuLiang() { return yuLiang; }
     public void setYuLiang(String yuLiang) { this.yuLiang = yuLiang; }

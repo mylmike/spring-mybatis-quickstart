@@ -137,6 +137,7 @@ export function deleteSchedule(data) {
  *   - xmdd001   品号
  *   - xmddseq   订单序号
  *   - imaf013   '2' = 只返回自制件；不传或 '' 则由后端返回全部
+ *   - x_flag    是否展示虚拟件（imaa004='X'）：'Y' 展示（默认）、'N' 不展示（下阶子件向上提升）
  *   - ent / site 默认 60 / NBYL
  * @returns {Promise} - { tree: [...], flat: [...], total, success }
  */
@@ -148,7 +149,8 @@ export function fetchBomTree(params = {}) {
     xmdddocno: params.xmdddocno ?? '',
     xmddseq: params.xmddseq ?? '',
     xmdd001: params.xmdd001 ?? '',
-    imaf013: params.imaf013 ?? '2'
+    imaf013: params.imaf013 ?? '2',
+    x_flag: params.x_flag ?? 'Y'
   }
   return api.post('/queryOrderBom', body)
 }
