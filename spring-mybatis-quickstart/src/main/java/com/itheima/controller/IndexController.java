@@ -521,6 +521,66 @@ public class  IndexController {
                 }
             }
 
+            // 排程数量超订单需求校验：sfahuc011 - 累计排程数量(sum sfahuc016) < 0 则直接报错，不落库
+            // 分组键：账套+据点+订单号(sfahuc004)+订单序号(sfahuc005)+品号(sfahuc002)，五字段合计
+            // 单次请求内如含同一分组的多个工单，需把本次提交的新排程量整体纳入、并扣减被覆盖旧值，避免重复计数
+            if (list != null) {
+                Map<String, BigDecimal> reqGroupNewSum = new LinkedHashMap<>(); // 分组键 -> 本次请求新排程量合计
+                Map<String, String> pkToGroup = new LinkedHashMap<>();           // 主键键 -> 分组键
+                Map<String, BigDecimal> pkOldQty = new LinkedHashMap<>();         // 主键键 -> 库里旧排程量(将被覆盖)
+
+                for (Map<String, Object> item : list) {
+                    String c = getString(item, "sfahucent"); if (isBlank(c)) c = "60";
+                    String s = getString(item, "sfahucsite"); if (isBlank(s)) s = "NBYL";
+                    String a = getString(item, "sfahuc001");   // 工单号
+                    String b = getString(item, "sfahuc002");   // 品号
+                    String d = getString(item, "sfahuc004");   // 订单号
+                    String sq = getString(item, "sfahuc005");  // 订单序号
+                    if (isBlank(a) || isBlank(b)) continue;
+                    String groupKey = c + "|" + s + "|" + d + "|" + sq + "|" + b;
+                    String pkKey = c + "|" + s + "|" + a + "|" + b;
+                    BigDecimal q = toBigDecimal(getString(item, "sfahuc016"));
+                    reqGroupNewSum.merge(groupKey, q, BigDecimal::add);
+                    pkToGroup.put(pkKey, groupKey);
+                    List<sfahuc> ex = sfahucMapper.findByEntSiteDocno(c, s, a, b);
+                    BigDecimal oldQ = (ex != null && !ex.isEmpty())
+                            ? toBigDecimal(ex.get(0).getSfahuc016()) : BigDecimal.ZERO;
+                    pkOldQty.put(pkKey, oldQ);
+                }
+
+                for (Map<String, Object> item : list) {
+                    String c = getString(item, "sfahucent"); if (isBlank(c)) c = "60";
+                    String s = getString(item, "sfahucsite"); if (isBlank(s)) s = "NBYL";
+                    String a = getString(item, "sfahuc001");   // 工单号
+                    String b = getString(item, "sfahuc002");   // 品号
+                    String d = getString(item, "sfahuc004");   // 订单号
+                    String sq = getString(item, "sfahuc005");  // 订单序号
+                    String orderReq = getString(item, "sfahuc011"); // 订单需求数量
+                    if (isBlank(a) || isBlank(b) || isBlank(d) || isBlank(sq) || isBlank(orderReq)) continue;
+                    String groupKey = c + "|" + s + "|" + d + "|" + sq + "|" + b;
+                    String pkKey = c + "|" + s + "|" + a + "|" + b;
+                    // 该分组内、本次请求涉及主键的旧排程量合计（需从 DB 合计中扣除，避免重复计算）
+                    BigDecimal oldReqTotal = BigDecimal.ZERO;
+                    for (Map.Entry<String, String> e : pkToGroup.entrySet()) {
+                        if (groupKey.equals(e.getValue())) {
+                            oldReqTotal = oldReqTotal.add(pkOldQty.getOrDefault(e.getKey(), BigDecimal.ZERO));
+                        }
+                    }
+                    BigDecimal dbSum = sfahucMapper.sumScheduleQtyByOrderItem(c, s, d, sq, b);
+                    BigDecimal reqNew = reqGroupNewSum.getOrDefault(groupKey, BigDecimal.ZERO);
+                    BigDecimal finalTotal = dbSum.subtract(oldReqTotal).add(reqNew);
+                    BigDecimal orderReqQty = toBigDecimal(orderReq);
+                    if (orderReqQty.subtract(finalTotal).compareTo(BigDecimal.ZERO) < 0) {
+                        result.set("success", false);
+                        result.set("message", "排程数量超出订单需求数量！订单号[" + d + "]序号[" + sq + "]品号[" + b
+                                + "]：订单需求数量=" + orderReqQty.toPlainString()
+                                + "，累计排程数量=" + finalTotal.toPlainString()
+                                + "（含本次提交）。请调整后再保存。");
+                        return result;
+                    }
+                }
+            }
+
             if (list != null) {
                 for (Map<String, Object> item : list) {
                     // 判重关键字（= 表主键）：账套、据点取默认值；工单号、品号必填
@@ -3404,7 +3464,7 @@ public class  IndexController {
      * 返回：{ success, list: [{ xmdddocno(订单号), xmddseq(订单序号), xmdd001(品号),
      *          xmdd006(订单量), xmdd014(已出货量), undqty(未交量), xmdd011(订单交期),
      *          pmaal004(customerName 客户名称), imaal003(品名), ooag011(业务员), salesempno(业务员工号),
-     *          gzcbl004(补货策略) }], total }
+     *          gzcbl004(补货策略), wpsl(订单未排数量 = sfaguc003 - sfaguc004) }], total }
      */
     @PostMapping("/queryUnfinishedOrders")
     public JSONObject queryUnfinishedOrders(@RequestBody Map<String, Object> request) {
@@ -3456,6 +3516,7 @@ public class  IndexController {
                     item.set("ooag011", nvl(getValueIgnoreCase(row, "ooag011")));
                     item.set("salesempno", nvl(getValueIgnoreCase(row, "salesempno")));
                     item.set("gzcbl004", nvl(getValueIgnoreCase(row, "gzcbl004")));
+                    item.set("wpsl", nvl(getValueIgnoreCase(row, "wpsl")));   // 订单未排数量 = sfaguc003 - sfaguc004
                     list.add(item);
                 }
             }

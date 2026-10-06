@@ -47,6 +47,7 @@ public class OrderSqlProvider {
      *   xmdadocdt_start / xmdadocdt_end  开单日期(xmdadocdt) 范围
      * 硬上限：最多返回最近的 300 条（按 xmdd011 降序取前 300，外层再升序展示）
      * 返回：订单号/序号/品号/订单量/已出货量/未交量/订单交期/客户名称(pmaal004)/品名(imaal003)/业务员(ooag011)/业务员工号(xmda002)/补货策略(gzcbl004)
+     *       / 订单未排数量(wpsl = NVL(sfaguc003,0) - NVL(sfaguc004,0)，LEFT JOIN sfaguc_t 按 账套+据点+订单号+订单序号 匹配)
      */
     public String queryUnfinishedOrders(final Map<String, Object> params) {
         final String d011Start = (String) params.get("xmdd011_start");
@@ -72,6 +73,8 @@ public class OrderSqlProvider {
             SELECT("ooag011");
             SELECT("xmda002 salesempno");
             SELECT("gzcbl004");
+            // 订单未排数量 = 需求总数(sfaguc003) - 供给总数(sfaguc004)；未匹配到 sfaguc_t 行时 NVL 取 0
+            SELECT("(NVL(sfaguc003,xmdd006) - NVL(sfaguc004,0)) wpsl");
             FROM("xmdd_t");
             LEFT_OUTER_JOIN("xmda_t on xmdaent = xmddent and xmdadocno = xmdddocno");
             LEFT_OUTER_JOIN("xmdc_t on xmdcent = xmddent and xmdcdocno = xmdddocno and xmdcseq = xmddseq");
@@ -80,6 +83,9 @@ public class OrderSqlProvider {
             LEFT_OUTER_JOIN("imaf_t on imafent = xmddent and imaf001 = xmdd001 and imafsite = #{xmddsite}");
             LEFT_OUTER_JOIN("gzcbl_t on gzcbl001 = '2022' and gzcbl002 = imaf013 and gzcbl003 = 'zh_CN'");
             LEFT_OUTER_JOIN("ooag_t on ooagent = xmddent and ooag001 = xmdaownid");
+            // 关联 sfaguc_t 取 需求总数/供给总数：按 账套+据点+订单号+订单序号 匹配
+            LEFT_OUTER_JOIN("sfaguc_t on sfagucent = xmddent and sfagucsite = xmddsite "
+                    + "and sfaguc002 = xmdddocno and sfaguc005 = xmddseq");
             WHERE("xmddent = #{xmddent}");
             WHERE("xmddsite = #{xmddsite}");
             WHERE("(xmdd006 - xmdd014) > 0");

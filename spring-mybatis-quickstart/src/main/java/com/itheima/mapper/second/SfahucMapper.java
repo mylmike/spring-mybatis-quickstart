@@ -69,6 +69,21 @@ public interface SfahucMapper {
                                         @Param("sfahuc004") String sfahuc004,
                                         @Param("sfahuc005") String sfahuc005);
 
+    /**
+     * 按 账套+据点+订单号(sfahuc004)+订单序号(sfahuc005)+品号(sfahuc002) 五字段
+     * 汇总 sfahuc_t 的排程数量合计 SUM(sfahuc016)
+     * 用于 saveSfahuc 保存前校验「排程数量是否超出订单需求数量」
+     */
+    @Select("select NVL(SUM(sfahuc016),0) from sfahuc_t " +
+            "where sfahucent=TO_NUMBER(#{sfahucent}) and sfahucsite=#{sfahucsite} " +
+            "and sfahuc004=#{sfahuc004} and sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},'')) " +
+            "and sfahuc002=#{sfahuc002}")
+    BigDecimal sumScheduleQtyByOrderItem(@Param("sfahucent") String sfahucent,
+                                         @Param("sfahucsite") String sfahucsite,
+                                         @Param("sfahuc004") String sfahuc004,
+                                         @Param("sfahuc005") String sfahuc005,
+                                         @Param("sfahuc002") String sfahuc002);
+
     @Insert("insert into sfahuc_t " +
             "(sfahucent,sfahucsite,sfahucdocno,sfahucseq,sfahuc001,sfahuc002,sfahuc003,sfahuc004,sfahuc005,sfahuc006,sfahuc007,sfahuc008,sfahuc009,sfahuc010,sfahuc011,sfahuc012,sfahuc013,sfahuc014,sfahuc015,sfahuc016,sfahucstus,sfahuccrtdt,sfahuccrtid) " +
             "values (" +
