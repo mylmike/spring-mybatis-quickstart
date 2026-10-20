@@ -2,11 +2,11 @@
   <div class="budget-page">
     <!-- 功能区 -->
     <div class="action-bar">
-      <el-button type="primary" size="default" icon="Search" :disabled="isQueryMode || isEdit" @click="handleQuery">查询</el-button>
+      <el-button type="primary" size="default" icon="Search" :disabled="isQueryMode || isEdit" v-if="canFunc(MODULE.BUDGET_ENTRY, FUNC.QUERY)" @click="handleQuery">查询</el-button>
       <el-button v-if="isQueryMode" type="success" size="default" icon="Check" @click="handleConfirmQuery" :loading="loading">确认</el-button>
       <el-button type="success" size="default" icon="Plus" :disabled="isEdit || isQueryMode" @click="handleAdd">新增</el-button>
-      <el-button type="success" size="default" icon="Edit" :disabled="isEdit || isQueryMode" @click="handleEdit">编辑</el-button>
-      <el-button type="warning" size="default" icon="Document" :disabled="!isEdit" @click="handleSave">保存</el-button>
+      <el-button type="success" size="default" icon="Edit" :disabled="isEdit || isQueryMode" v-if="canFunc(MODULE.BUDGET_ENTRY, FUNC.EDIT)" @click="handleEdit">编辑</el-button>
+      <el-button type="warning" size="default" icon="Document" :disabled="!isEdit" v-if="canFunc(MODULE.BUDGET_ENTRY, FUNC.SAVE)" @click="handleSave">保存</el-button>
       <el-button type="danger" size="default" icon="Delete" :disabled="detailList.length === 0 || isQueryMode" @click="handleDelete">删除</el-button>
       <el-button size="default" icon="Download" @click="handleExport">导出模板</el-button>
       <el-button size="default" icon="Upload" @click="handleImport">导入Excel</el-button>
@@ -151,6 +151,7 @@ import { reactive, ref, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { queryBgbsuc, saveBgbsuc, deleteBgbsuc, queryDept, querySubject } from '../api/budget.js'
 import * as XLSX from 'xlsx'
+import { canFunc, MODULE, FUNC } from '../permission.js'
 
 /** 生成唯一行标识 */
 let _uid = 0

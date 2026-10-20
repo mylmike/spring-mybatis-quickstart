@@ -33,7 +33,7 @@
           />
         </el-form-item>
         <el-form-item class="btn-group">
-          <el-button type="primary" icon="Search" :loading="loading" @click="handleQuery">查询</el-button>
+          <el-button type="primary" icon="Search" :loading="loading" v-if="canFunc(MODULE.BUDGET_PURCHASE_PRICING_REPORT, FUNC.QUERY)" @click="handleQuery">查询</el-button>
           <el-button icon="Refresh" @click="handleReset">重置</el-button>
           <el-button icon="Download" :disabled="list.length === 0" @click="exportToExcel">导出Excel</el-button>
         </el-form-item>
@@ -111,6 +111,7 @@ import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as XLSX from 'xlsx'
 import { queryBudgetPurchaseAnalysis } from '../api/budget.js'
+import { canFunc, MODULE, FUNC } from '../permission.js'
 
 /** 单头查询条件 */
 const header = reactive({

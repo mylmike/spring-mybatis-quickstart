@@ -6,10 +6,12 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.web.servlet.ServletComponentScan;
 import org.springframework.boot.web.servlet.support.SpringBootServletInitializer;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 
 @SpringBootApplication(exclude = {DataSourceAutoConfiguration.class})
 @ServletComponentScan("com.itheima.config")
+@EnableScheduling
 public class SpringMybatisQuickstartApplication extends SpringBootServletInitializer {
 
     public static void main(String[] args) {

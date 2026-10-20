@@ -60,6 +60,7 @@ const handleLogin = async () => {
       console.log('提取用户名:', JSON.stringify(userName))
       emit('login-success', {
         userName,
+        username: form.username,
         deptNo: data.deptNo || '',
         deptName: data.deptName || ''
       })

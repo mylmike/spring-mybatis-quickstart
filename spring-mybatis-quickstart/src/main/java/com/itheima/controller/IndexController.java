@@ -8,6 +8,9 @@ import com.itheima.mapper.primary.UserMapper;
 import com.itheima.mapper.second.*;
 import com.itheima.mapper.third.SrmDeliveryBodyMapper;
 import com.itheima.mapper.third.SrmDeliveryHeadMapper;
+import com.itheima.mapper.third.SrmLoginNumberMapper;
+import com.itheima.mapper.third.SrmClearConfigMapper;
+import com.itheima.pojo.SrmClearConfig;
 import com.itheima.pojo.PmdsdtRow;
 import com.itheima.pojo.SrmDeliveryBody;
 import com.itheima.pojo.WorkOrderRow;
@@ -32,6 +35,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.time.LocalTime;
+import org.springframework.scheduling.annotation.Scheduled;
 
 @RestController
 public class  IndexController {
@@ -61,6 +66,12 @@ public class  IndexController {
 
     @Autowired
     private SrmDeliveryHeadMapper srmDeliveryHeadMapper;
+
+    @Autowired
+    private SrmLoginNumberMapper srmLoginNumberMapper;
+
+    @Autowired
+    private SrmClearConfigMapper srmClearConfigMapper;
 
     @Autowired
     private PmdlMapper pmdlMapper;
@@ -299,6 +310,109 @@ public class  IndexController {
 }
 
     /**
+     * 清空 MySQL 数据源中的在线用户记录表 srm_login_number.
+     * 前端可定时 POST /clearSrmLoginNumber 调用，执行成功返回“成功”，异常返回“失败”。
+     */
+    @PostMapping("/clearSrmLoginNumber")
+    @Transactional("thirdTransactionManager")
+    public String clearSrmLoginNumber(@RequestBody Map<String, Object> request) {
+        String name = getString(request, "name");
+        if (isBlank(name)) {
+            return "失败";
+        }
+        return doClearSrmLogin(name.trim());
+    }
+
+    /**
+     * 真正执行清除逻辑，供 POST 接口与后端定时任务共用（调用方已开启 third 事务）。
+     */
+    private String doClearSrmLogin(String name) {
+        try {
+            srmLoginNumberMapper.disableSafeUpdates();
+            if ("ALL".equalsIgnoreCase(name)) {
+                srmLoginNumberMapper.clearAll();
+            } else {
+                srmLoginNumberMapper.clearByName(name);
+            }
+            return "成功";
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "失败";
+        } finally {
+            try {
+                srmLoginNumberMapper.enableSafeUpdates();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    /**
+     * 后端定时任务：每分钟检查一次配置，若已启用且当前时间(服务器本地)等于设定时间，
+     * 则清除全部在线用户。定时放在后端，不依赖前端页面保持打开。
+     */
+    @Scheduled(cron = "0 * * * * ?")
+    @Transactional("thirdTransactionManager")
+    public void scheduledClearSrmLogin() {
+        try {
+            SrmClearConfig cfg = srmClearConfigMapper.selectConfig();
+            if (cfg == null || !Boolean.TRUE.equals(cfg.getEnabled()) || isBlank(cfg.getClearTime())) {
+                return;
+            }
+            LocalTime now = LocalTime.now();
+            String hhmm = String.format("%02d:%02d", now.getHour(), now.getMinute());
+            if (hhmm.equals(cfg.getClearTime().trim())) {
+                doClearSrmLogin("ALL");
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * 保存自动清除在线用户的定时配置（前端「启用/停用」时调用）。
+     * 请求体：{ token, enabled(布尔), time("HH:mm") }
+     */
+    @PostMapping("/setClearSrmLoginTime")
+    @Transactional("thirdTransactionManager")
+    public String setClearSrmLoginTime(@RequestBody Map<String, Object> request) {
+        try {
+            boolean enabled = Boolean.parseBoolean(getString(request, "enabled"));
+            String time = getString(request, "time");
+            if (isBlank(time)) {
+                return "失败";
+            }
+            SrmClearConfig existing = srmClearConfigMapper.selectConfig();
+            if (existing == null) {
+                srmClearConfigMapper.insertConfig(enabled, time.trim());
+            } else {
+                srmClearConfigMapper.updateConfig(enabled, time.trim());
+            }
+            return "成功";
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "失败";
+        }
+    }
+
+    /**
+     * 查询当前自动清除配置（前端初始化时调用）。
+     * 返回：{ enabled(布尔), clearTime(字符串), success(布尔) }
+     */
+    @PostMapping("/getClearSrmLoginConfig")
+    public JSONObject getClearSrmLoginConfig() {
+        JSONObject result = new JSONObject();
+        try {
+            SrmClearConfig cfg = srmClearConfigMapper.selectConfig();
+            result.set("enabled", cfg != null && Boolean.TRUE.equals(cfg.getEnabled()));
+            result.set("clearTime", cfg != null && cfg.getClearTime() != null ? cfg.getClearTime() : "");
+            result.set("success", true);
+        } catch (Exception e) {
+            result.set("success", false);
+        }
+        return result;
+    }
+
+    /**
      * 按可选条件查询工单（sfaa_t）
      * 前端 POST /queryOrder
      * 请求体 JSON 示例：
@@ -505,7 +619,9 @@ public class  IndexController {
 
             // 预校验：NUMBER 型列必须是合法数字或空，否则直接给出明确提示（避免 Oracle ORA-01722 难以定位）
             if (list != null) {
-                String[] numericFields = {"sfahucseq", "sfahuc003", "sfahuc005", "sfahuc009", "sfahuc011"};
+                // 覆盖 sfahuc_t 全部 NUMBER 型列：含排程数量 sfahuc016 及人数/工时/UPPH(012~014)
+                String[] numericFields = {"sfahucseq", "sfahuc003", "sfahuc005", "sfahuc009", "sfahuc011",
+                                          "sfahuc012", "sfahuc013", "sfahuc014", "sfahuc016"};
                 for (Map<String, Object> item : list) {
                     String wo = getString(item, "sfahuc001");
                     String pn = getString(item, "sfahuc002");
@@ -619,12 +735,17 @@ public class  IndexController {
                     record.setSfahuc013(getString(item, "sfahuc013"));   // 工作时长
                     record.setSfahuc014(getString(item, "sfahuc014"));   // UPPH值
                     record.setSfahuc016(getString(item, "sfahuc016"));   // 排程数量（前端传入）
-                    // 日产量 = 人数 * 工作时长 * UPPH（空值按 0 处理）
-                    BigDecimal d12 = toBigDecimal(record.getSfahuc012());
-                    BigDecimal d13 = toBigDecimal(record.getSfahuc013());
-                    BigDecimal d14 = toBigDecimal(record.getSfahuc014());
-                    record.setSfahuc015(d12.multiply(d13).multiply(d14).toPlainString());
                     // 状态码（前端每条传入）：新增默认 'N'，更新时未传则保持原值（在分支内分别处理）
+                    // 日产量 = 人数 * 工作时长 * UPPH：三项都有值才重算写入；
+                    // 任一项缺失时置 null，配合 updateByPk 的「有值才更新」不覆盖库里原有日产量
+                    if (!isBlank(record.getSfahuc012()) && !isBlank(record.getSfahuc013()) && !isBlank(record.getSfahuc014())) {
+                        BigDecimal d12 = toBigDecimal(record.getSfahuc012());
+                        BigDecimal d13 = toBigDecimal(record.getSfahuc013());
+                        BigDecimal d14 = toBigDecimal(record.getSfahuc014());
+                        record.setSfahuc015(d12.multiply(d13).multiply(d14).toPlainString());
+                    } else {
+                        record.setSfahuc015(null);
+                    }
                     String sfahucstusVal = getString(item, "sfahucstus");
                     // 操作人：优先 item.userid，否则请求级 userid；insert 写入 crtid，update 写入 modid
                     String uid = getString(item, "userid");
@@ -798,12 +919,46 @@ public class  IndexController {
                 params.put("sfahuc005", sfahuc005);
             }
 
+            // 删除前先按同一条件取回受影响的「订单号 + 订单序号」，删除后据此重算 sfaguc_t.sfaguc004（供给总数）；
+            // 不回写的话删掉排程行后供给总数虚高，wpsl(订单未排数量 = 需求 - 供给) 会算错甚至为负
+            Map<String, String[]> sfagucKeys = new LinkedHashMap<>();
+            try {
+                List<sfahuc> affected = sfahucMapper.listByDocno(params);
+                if (affected != null) {
+                    for (sfahuc r : affected) {
+                        if (isBlank(r.getSfahuc004())) continue;
+                        String seq = r.getSfahuc005() == null ? "" : r.getSfahuc005();
+                        String k = r.getSfahucent() + "|" + r.getSfahucsite() + "|" + r.getSfahuc004() + "|" + seq;
+                        sfagucKeys.putIfAbsent(k, new String[]{r.getSfahucent(), r.getSfahucsite(), r.getSfahuc004(), seq});
+                    }
+                }
+            } catch (Exception ex) {
+                System.out.println("[deleteSfahuc] 取回受影响的订单号/序号失败，跳过供给总数回写: " + ex.getMessage());
+            }
+
             int deletedCount = sfahucMapper.deleteByKey(params);
 
             // 同步删除 sfajuc_t 中该工单号的日计划（仅当主表确实删到记录）
             int sfajucDeletedCount = 0;
             if (deletedCount > 0) {
                 sfajucDeletedCount = sfajucMapper.deleteByDocno(sfahucent, sfahucsite, sfahuc001);
+            }
+
+            // 回写供给总数 sfaguc004（与 /saveSfahuc 对称）：按删除后剩余行重算，无剩余行则为 0
+            StringBuilder sfagucMsg = new StringBuilder();
+            if (deletedCount > 0) {
+                for (String[] p : sfagucKeys.values()) {
+                    try {
+                        BigDecimal supplyTotal = sfahucMapper.sumScheduleQtyByOrderSeq(p[0], p[1], p[2], p[3]);
+                        upsertSfagucSupply(p[0], p[1], p[2], p[3], supplyTotal);
+                    } catch (Exception ex) {
+                        sfagucMsg.append("订单号[").append(p[2]).append("]序号[").append(p[3])
+                                .append("]回写sfaguc失败:").append(ex.getMessage()).append("; ");
+                    }
+                }
+            }
+            if (sfagucMsg.length() > 0) {
+                result.set("sfagucMsg", sfagucMsg.toString());
             }
 
             result.set("success", true);
@@ -2510,6 +2665,12 @@ public class  IndexController {
      */
     private void upsertSfagucDemand(String ent, String site, String docNo, String docSeq, BigDecimal demandTotal) {
         if (isBlank(ent) || isBlank(site) || isBlank(docNo)) return;
+        // sfaguc005(订单序号) 是主键列(NOT NULL)：为空时既定位不到也插不进，直接跳过并留日志，
+        // 否则会落到 insert 分支撞主键 ORA-00001，被 catch 静默吞掉，需求/供给总数永远写不进去
+        if (isBlank(docSeq)) {
+            System.out.println("[sfaguc] 跳过需求总数回写：订单号[" + docNo + "]的订单序号为空（sfaguc005 为主键列，不可为空）");
+            return;
+        }
         sfaguc exist = sfagucMapper.findByEntSiteDocnoSeq(ent, site, docNo, docSeq);
         sfaguc r = new sfaguc();
         r.setSfagucent(ent);
@@ -2531,6 +2692,12 @@ public class  IndexController {
      */
     private void upsertSfagucSupply(String ent, String site, String docNo, String docSeq, BigDecimal supplyTotal) {
         if (isBlank(ent) || isBlank(site) || isBlank(docNo)) return;
+        // sfaguc005(订单序号) 是主键列(NOT NULL)：为空时既定位不到也插不进，直接跳过并留日志，
+        // 否则会落到 insert 分支撞主键 ORA-00001，被 catch 静默吞掉，需求/供给总数永远写不进去
+        if (isBlank(docSeq)) {
+            System.out.println("[sfaguc] 跳过供给总数回写：订单号[" + docNo + "]的订单序号为空（sfaguc005 为主键列，不可为空）");
+            return;
+        }
         sfaguc exist = sfagucMapper.findByEntSiteDocnoSeq(ent, site, docNo, docSeq);
         sfaguc r = new sfaguc();
         r.setSfagucent(ent);

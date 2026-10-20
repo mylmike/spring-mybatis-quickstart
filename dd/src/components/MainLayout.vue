@@ -25,32 +25,19 @@
     <div class="layout-body">
       <!-- 左下：总菜单 -->
       <aside class="layout-sidebar" :class="{ collapsed: sidebarCollapsed }">
-        <div class="menu-title">导航菜单</div>
         <el-menu
           :default-active="activeMenu"
-          :default-openeds="['schedule', 'finance']"
+          :default-openeds="defaultOpenedSubMenus"
           class="main-menu"
           @select="handleMenuSelect"
         >
-          <el-sub-menu index="schedule">
-            <template #title>计划排程</template>
-            <el-menu-item index="main-schedule">主计划排程</el-menu-item>
-            <el-menu-item index="shop-schedule">车间计划排程</el-menu-item>
-          </el-sub-menu>
-          <el-menu-item index="attendance">人事考勤</el-menu-item>
-          <el-menu-item index="delivery">供应商送货待收货</el-menu-item>
-          <el-sub-menu index="finance">
-            <template #title>财务核算</template>
-            <el-menu-item index="budget-entry">预算录入</el-menu-item>
-            <el-menu-item index="budget-report">预算报表</el-menu-item>
-            <el-menu-item index="budget-purchase-pricing">预算采购核价录入</el-menu-item>
-            <el-menu-item index="budget-purchase-pricing-report">预算采购核价分析报表</el-menu-item>
-          </el-sub-menu>
+          <!-- 递归渲染：分类(有 children)为 el-sub-menu，叶子为 el-menu-item，支持任意层级 -->
+          <MenuNodes :nodes="visibleMenu" />
         </el-menu>
       </aside>
 
       <!-- 下右：内容区 -->
-      <main class="layout-content" :class="{ 'content-fullbleed': activeMenu === 'shop-schedule' }">
+      <main class="layout-content" :class="{ 'content-fullbleed': activeMenu === MODULE.SHOP_SCHEDULE }">
         <component :is="currentComponent" />
       </main>
     </div>
@@ -58,13 +45,8 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-
-/** 侧边栏折叠状态 */
-const sidebarCollapsed = ref(false)
-const toggleSidebar = () => {
-  sidebarCollapsed.value = !sidebarCollapsed.value
-}
+import { ref, computed, watch, h, resolveComponent } from 'vue'
+import { canViewModule, MODULE } from '../permission.js'
 import MainSchedule from './MainSchedule.vue'
 import ShopSchedule from './ShopSchedule.vue'
 import DeliveryStatus from './DeliveryStatus.vue'
@@ -73,8 +55,17 @@ import BudgetReport from './BudgetReport.vue'
 import BudgetPurchasePricing from './BudgetPurchasePricing.vue'
 import BudgetPurchasePricingReport from './BudgetPurchasePricingReport.vue'
 
-defineProps({
-  deptInfo: { type: Object, default: null }
+/** 侧边栏折叠状态 */
+const sidebarCollapsed = ref(false)
+const toggleSidebar = () => {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
+const props = defineProps({
+  deptInfo: { type: Object, default: null },
+  /** 后端 gzweuc_t 菜单树：[{gzweuc001, gzweuc002, gzweuc003, gzweuc004, children}]
+   *  gzweuc001 上级编号，gzweuc002 自身编号（=MODULE.* 值），gzweuc003 顺序，gzweuc004 标题 */
+  menuTree: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['logout'])
@@ -83,19 +74,89 @@ const handleLogout = () => {
   emit('logout')
 }
 
+/** 模块编号 → Vue 组件映射：key 必须与 permission.js 的 MODULE 值一致（即 gzweuc002）。
+ *  已注册的模块点击后渲染对应组件；未注册的（诸如模块显示为占位页） */
 const componentsMap = {
-  'main-schedule': MainSchedule,
-  'shop-schedule': ShopSchedule,
-  attendance: { template: '<div class="placeholder-page">人事考勤（待开发）</div>' },
-  delivery: DeliveryStatus,
-  'budget-entry': BudgetEntry,
-  'budget-report': BudgetReport,
-  'budget-purchase-pricing': BudgetPurchasePricing,
-  'budget-purchase-pricing-report': BudgetPurchasePricingReport
+  [MODULE.MAIN_SCHEDULE]: MainSchedule,
+  [MODULE.SHOP_SCHEDULE]: ShopSchedule,
+  [MODULE.DELIVERY]: DeliveryStatus,
+  [MODULE.BUDGET_ENTRY]: BudgetEntry,
+  [MODULE.BUDGET_REPORT]: BudgetReport,
+  [MODULE.BUDGET_PURCHASE_PRICING]: BudgetPurchasePricing,
+  [MODULE.BUDGET_PURCHASE_PRICING_REPORT]: BudgetPurchasePricingReport
 }
+const placeholderPage = { template: '<div class="placeholder-page">该模块暂未实现</div>' }
 
-const activeMenu = ref('main-schedule')
-const currentComponent = computed(() => componentsMap[activeMenu.value])
+/** 递归渲染菜单节点（函数式组件）：
+ *  有 children → el-sub-menu（title 为菜单名，default 递归渲染子级）
+ *  无 children → el-menu-item
+ *  支持任意层级，之前模板只平铺一层导致第三级菜单丢失 */
+const MenuNodes = (props) => {
+  const render = (nodes) =>
+    (nodes || []).map(n =>
+      n.children && n.children.length
+        ? h(resolveComponent('el-sub-menu'), { key: n.gzweuc002, index: n.gzweuc002 }, {
+            title: () => n.gzweuc004,
+            default: () => render(n.children)
+          })
+        : h(resolveComponent('el-menu-item'), { key: n.gzweuc002, index: n.gzweuc002 }, () => n.gzweuc004)
+    )
+  return render(props.nodes)
+}
+MenuNodes.props = ['nodes']
+
+/** 递归过滤：分类节点本身不查权限；叶子节点必须 canViewModule；空分类自动隐藏 */
+const filterByPermission = (nodes) => {
+  const out = []
+  for (const n of nodes || []) {
+    if (n.children && n.children.length) {
+      const kids = filterByPermission(n.children)
+      if (kids.length) out.push({ ...n, children: kids })
+    } else {
+      if (canViewModule(n.gzweuc002)) out.push(n)
+    }
+  }
+  // 兜底按显示顺序排
+  return out.sort((a, b) => Number(a.gzweuc003 || 0) - Number(b.gzweuc003 || 0))
+}
+const visibleMenu = computed(() => filterByPermission(props.menuTree))
+
+/** 递归收集所有分类节点编号（含嵌套层级），默认全部展开 */
+const collectCategoryIds = (nodes, acc = []) => {
+  for (const n of nodes || []) {
+    if (n.children && n.children.length) {
+      acc.push(n.gzweuc002)
+      collectCategoryIds(n.children, acc)
+    }
+  }
+  return acc
+}
+const defaultOpenedSubMenus = computed(() => collectCategoryIds(visibleMenu.value))
+
+/** 取第一个可见叶子节点：用于默认激活项与权限变化时的回退 */
+const firstLeaf = (nodes) => {
+  for (const n of nodes || []) {
+    if (!n.children || !n.children.length) return n
+    const inner = firstLeaf(n.children)
+    if (inner) return inner
+  }
+  return null
+}
+const defaultLeafId = computed(() => firstLeaf(visibleMenu.value)?.gzweuc002 || '')
+
+const activeMenu = ref('')
+/** 菜单/权限变化时，若当前激活项不再可见则回退到第一个可见叶子 */
+watch(visibleMenu, (list) => {
+  if (!list.length) { activeMenu.value = ''; return }
+  const found = (nodes) => nodes.some(n =>
+    (!n.children || !n.children.length)
+      ? n.gzweuc002 === activeMenu.value
+      : found(n.children)
+  )
+  if (!found(list)) activeMenu.value = defaultLeafId.value
+}, { immediate: true })
+
+const currentComponent = computed(() => componentsMap[activeMenu.value] || placeholderPage)
 
 const handleMenuSelect = (index) => {
   activeMenu.value = index
@@ -222,6 +283,19 @@ const handleMenuSelect = (index) => {
 .main-menu {
   border-right: none;
   background: transparent;
+  /* 覆盖 Element Plus 菜单字体（内部 .el-menu-item/.el-sub-menu__title 使用该变量） */
+  --el-menu-font-size: 11px;
+  font-size: 11px;
+}
+.main-menu :deep(.el-menu-item),
+.main-menu :deep(.el-sub-menu__title) {
+  font-size: 11px;
+}
+/* 鼠标悬停 / 已选中菜单行：背景改为蓝色 */
+.main-menu :deep(.el-menu-item:hover),
+.main-menu :deep(.el-menu-item.is-active) {
+  background-color: #409eff;
+  color: #fff;
 }
 
 .layout-content {

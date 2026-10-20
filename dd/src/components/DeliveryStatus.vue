@@ -31,7 +31,7 @@
           />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="loading" @click="handleQuery">查询</el-button>
+          <el-button type="primary" :loading="loading" v-if="canFunc(MODULE.DELIVERY, FUNC.QUERY)" @click="handleQuery">查询</el-button>
           <el-button @click="resetQueryParams">重置</el-button>
         </el-form-item>
       </el-form>
@@ -46,6 +46,31 @@
       </el-radio-group>
       <span style="margin-left:16px;color:#666">共 {{ filteredList.length }} 条记录</span>
       <el-button size="small" style="margin-left:8px" @click="clearFilters">清除筛选</el-button>
+
+      <el-divider direction="vertical" />
+      <span style="color:#666">清除在线用户时间</span>
+      <el-time-picker
+        v-model="clearTime"
+        format="HH:mm"
+        value-format="HH:mm"
+        placeholder="选择时间"
+        style="width:120px;margin-left:4px"
+      />
+      <el-button
+        :type="autoClearEnabled ? 'warning' : 'primary'"
+        size="small"
+        style="margin-left:8px"
+        :loading="savingClear"
+        @click="toggleAutoClear"
+      >{{ autoClearEnabled ? '停用自动清除在线用户' : '启用自动清除在线用户' }}</el-button>
+      <el-button
+        type="danger"
+        size="small"
+        style="margin-left:8px"
+        :loading="runningClear"
+        @click="runClearNow"
+      >立即执行一次</el-button>
+
       <el-button
         type="danger"
         style="margin-left:auto"
@@ -272,11 +297,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Filter } from '@element-plus/icons-vue'
 import * as XLSX from 'xlsx'
-import { queryDeliveryMatch, updateDeliveryMatch, deleteDeliveryMatch } from '../api/pendingOrders.js'
+import { queryDeliveryMatch, updateDeliveryMatch, deleteDeliveryMatch, getClearSrmLoginConfig, setClearSrmLoginTime, clearSrmLoginNumber } from '../api/pendingOrders.js'
+import { canFunc, MODULE, FUNC } from '../permission.js'
 
 const list = ref([])
 const loading = ref(false)
@@ -285,6 +311,66 @@ const deleting = ref(false)
 const filter = ref('all')
 const tableRef = ref(null)
 const selectedRows = ref([])
+
+// ===== 自动清除在线用户：配置保存到后端，由后端 @Scheduled 定时执行 =====
+const clearTime = ref('')
+const autoClearEnabled = ref(false)
+const savingClear = ref(false)
+const runningClear = ref(false)
+
+// 立即清除一次在线用户（与定时任务共用后端 /clearSrmLoginNumber）
+const runClearNow = async () => {
+  runningClear.value = true
+  try {
+    const res = await clearSrmLoginNumber({ name: 'ALL' })
+    const data = res.data
+    const ok = (typeof data === 'string' && data.includes('成功')) || (data && data.success)
+    if (ok) {
+      ElMessage.success('已立即清除在线用户')
+    } else {
+      ElMessage.warning('清除返回: ' + JSON.stringify(data))
+    }
+  } catch (err) {
+    ElMessage.error('清除失败: ' + (err.response?.data?.message || err.message))
+  } finally {
+    runningClear.value = false
+  }
+}
+
+const refreshClearConfig = async () => {
+  try {
+    const res = await getClearSrmLoginConfig()
+    const data = res.data || {}
+    autoClearEnabled.value = data.enabled === true || data.enabled === 'true' || data.enabled === 1
+    clearTime.value = data.clearTime || ''
+  } catch (e) { /* ignore */ }
+}
+
+const toggleAutoClear = async () => {
+  if (!clearTime.value) {
+    ElMessage.warning('请先选择清除时间（如 23:01，表示 23点01分）')
+    return
+  }
+  savingClear.value = true
+  try {
+    const next = !autoClearEnabled.value
+    const res = await setClearSrmLoginTime({ enabled: next, time: clearTime.value })
+    const data = res.data
+    const ok = (typeof data === 'string' && data.includes('成功')) || (data && data.success)
+    if (ok) {
+      autoClearEnabled.value = next
+      ElMessage.success(next ? `已启用，每天 ${clearTime.value} 自动清除在线用户` : '已停用自动清除在线用户')
+    } else {
+      ElMessage.warning('保存失败: ' + JSON.stringify(data))
+    }
+  } catch (err) {
+    ElMessage.error('保存失败: ' + (err.response?.data?.message || err.message))
+  } finally {
+    savingClear.value = false
+  }
+}
+
+onMounted(() => { refreshClearConfig() })
 
 const czfOptions = ['=', '>', '>=', '<', '<=']
 

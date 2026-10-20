@@ -3,14 +3,14 @@
     <el-card class="basic-card" shadow="never">
       <el-form :model="form" label-width="90px" class="basic-form">
         <el-row class="compact-row no-gutter-row">
-          <el-col class="tight-col">
+          <el-col class="tight-col" style="display: none">
             <el-form-item label="企业代码" required class="required-field">
               <el-input v-model="form.enterpriseCode" style="width: 40px" />
             </el-form-item>
           </el-col>
-          <el-col class="tight-col">
-            <el-form-item label="单号" required class="required-field">
-              <el-input v-model="form.orderNo" clearable style="width: 80px" />
+          <el-col class="tight-col" style="display: none">
+            <el-form-item label="营运据点">
+              <el-input v-model="form.site" clearable style="width: 78px" />
             </el-form-item>
           </el-col>
           <el-col class="tight-col">
@@ -18,6 +18,8 @@
               <div class="dept-select">
                 <el-select-v2
                   v-model="form.costCenter"
+                  multiple
+                  collapse-tags
                   filterable
                   clearable
                   :loading="deptLoading"
@@ -33,32 +35,13 @@
           </el-col>
           <el-col class="tight-col">
             <el-form-item label="订单号">
-              <el-select
-                v-model="orderSelectValue"
-                filterable
+              <el-input
+                v-model="form.customerOrderNo"
                 clearable
-                :loading="orderLoading"
-                placeholder="请输入或选择"
-                class="order-select-input"
-                @change="handleOrderChange"
-                @visible-change="handleOrderVisible"
+                placeholder="请输入订单号"
+                style="width: 150px"
                 @keyup.enter="loadPendingOrders"
-              >
-                <el-option
-                  v-for="opt in orderOptions"
-                  :key="opt.key"
-                  :label="opt.docno"
-                  :value="opt.key"
-                >
-                  <div class="order-option">
-                    <span class="col-docno">{{ opt.docno }}</span>
-                    <span class="col-seq">{{ opt.seq }}</span>
-                    <span class="col-item">{{ opt.item }}</span>
-                    <span class="col-date">{{ opt.docDate }}</span>
-                    <span class="col-customer">{{ opt.customer }}</span>
-                  </div>
-                </el-option>
-              </el-select>
+              />
             </el-form-item>
           </el-col>
           <el-col class="tight-col">
@@ -77,31 +60,88 @@
             </el-form-item>
           </el-col>
           <el-col class="tight-col">
-            <el-form-item label="预计日期">
-              <el-date-picker v-model="form.estimatedDate" type="date" placeholder="选择日期" value-format="YYYY-MM-DD" style="width: 104px" />
+            <el-form-item label="查询目标">
+              <el-select v-model="form.queryTarget" style="width: 132px">
+                <el-option label="左右两表" value="both" />
+                <el-option label="仅左表" value="left" />
+                <el-option label="仅右表" value="right" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col class="tight-col">
-            <el-form-item label="营运据点">
-              <el-input v-model="form.site" clearable style="width: 78px" />
+            <el-form-item label="生产日期">
+              <el-date-picker v-model="form.prodDateStart" type="date" placeholder="起" value-format="YYYY-MM-DD" style="width: 112px" />
+              <span class="range-sep">~</span>
+              <el-date-picker v-model="form.prodDateEnd" type="date" placeholder="止" value-format="YYYY-MM-DD" style="width: 112px" />
+            </el-form-item>
+          </el-col>
+          <el-col class="tight-col">
+            <el-form-item label="开单日期">
+              <el-date-picker v-model="form.docDateStart" type="date" placeholder="起" value-format="YYYY-MM-DD" style="width: 112px" />
+              <span class="range-sep">~</span>
+              <el-date-picker v-model="form.docDateEnd" type="date" placeholder="止" value-format="YYYY-MM-DD" style="width: 112px" />
+            </el-form-item>
+          </el-col>
+          <el-col class="tight-col">
+            <el-form-item label="预计开工">
+              <el-date-picker v-model="form.planStartStart" type="date" placeholder="起" value-format="YYYY-MM-DD" style="width: 112px" />
+              <span class="range-sep">~</span>
+              <el-date-picker v-model="form.planStartEnd" type="date" placeholder="止" value-format="YYYY-MM-DD" style="width: 112px" />
+            </el-form-item>
+          </el-col>
+          <el-col class="tight-col">
+            <el-form-item label="预计完工">
+              <el-date-picker v-model="form.planEndStart" type="date" placeholder="起" value-format="YYYY-MM-DD" style="width: 112px" />
+              <span class="range-sep">~</span>
+              <el-date-picker v-model="form.planEndEnd" type="date" placeholder="止" value-format="YYYY-MM-DD" style="width: 112px" />
+            </el-form-item>
+          </el-col>
+          <el-col class="tight-col">
+            <el-form-item label="状态码">
+              <el-select v-model="form.workOrderStatus" multiple clearable collapse-tags collapse-tags-tooltip placeholder="全部" class="status-select">
+                <el-option v-for="opt in statusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col class="tight-col form-actions-col">
             <el-form-item label=" ">
               <div class="form-actions">
-                <el-button type="primary" size="small" icon="Search" @click="loadPendingOrders">查询</el-button>
-                <el-button type="primary" size="small" :disabled="leftSelected.length === 0" @click="moveToRight">&gt;</el-button>
-                <el-button type="warning" size="small" :disabled="rightSelected.length === 0" @click="moveToLeft">&lt;</el-button>
-                <el-button type="success" size="small" :disabled="scheduledList.length === 0" @click="handleSave">保存</el-button>
+                <el-button type="primary" size="small" icon="Search" v-if="canFunc(MODULE.SHOP_SCHEDULE, FUNC.QUERY)" @click="loadPendingOrders">查询</el-button>
+                <el-button type="primary" size="small" :disabled="leftSelected.length === 0" v-if="canFunc(MODULE.SHOP_SCHEDULE, FUNC.EDIT)" @click="moveToRight">&gt;</el-button>
+                <el-button type="warning" size="small" :disabled="rightSelected.length === 0" v-if="canFunc(MODULE.SHOP_SCHEDULE, FUNC.EDIT)" @click="moveToLeft">&lt;</el-button>
+                <el-button type="success" size="small" :disabled="scheduledList.length === 0" v-if="canFunc(MODULE.SHOP_SCHEDULE, FUNC.SAVE)" @click="handleSave">保存</el-button>
+                <el-button type="danger" size="small" :disabled="rightSelected.length === 0" v-if="canFunc(MODULE.SHOP_SCHEDULE, FUNC.SAVE)" @click="handleAudit">审核</el-button>
+                <el-button type="info" size="small" :disabled="rightSelected.length === 0" v-if="canFunc(MODULE.SHOP_SCHEDULE, FUNC.SAVE)" @click="handleCancelAudit">取消审核</el-button>
+                <el-button size="small" @click="toggleLeft">{{ leftVisible ? '隐藏明细' : '显示明细' }}</el-button>
+                <el-button size="small" @click="toggleRight">{{ rightVisible ? '隐藏排程' : '显示排程' }}</el-button>
               </div>
             </el-form-item>
+          </el-col>
+        </el-row>
+        <!-- 保存时展示发送到后端的 JSON（临时缩效隐藏，需要时去掉下方 json-mini 类/样式即可恢复） -->
+        <el-row v-if="saveJson">
+          <el-col :span="24">
+            <el-input
+              v-model="saveJson"
+              type="textarea"
+              readonly
+              :rows="1"
+              class="json-mini"
+              style="width: 10px"
+              placeholder="保存后显示发送到后端的 JSON"
+            />
           </el-col>
         </el-row>
       </el-form>
     </el-card>
 
     <div class="table-area" ref="tableArea">
-      <div class="left-panel" :style="{ width: leftPanelWidth }">
+      <!-- 折叠态：左侧未排工单明细表窄条，点击展开 -->
+      <div v-if="!leftVisible" class="collapsed-strip" @click="showLeft" title="展开未排工单明细表">
+        <el-icon><ArrowRight /></el-icon>
+        <span class="strip-text">未排工单</span>
+      </div>
+      <div class="left-panel" :style="{ width: leftPanelWidth }" v-show="leftVisible" @contextmenu="onTableContextMenu('left', $event)">
         <el-table
           ref="leftTable"
           :data="pendingList"
@@ -109,6 +149,7 @@
           border
           height="100%"
           @selection-change="handleLeftSelection"
+          @row-contextmenu="(row, col, ev) => onRowContextMenu(row, col, ev, 'left')"
         >
           <el-table-column type="selection" width="26" label="选取" />
           <el-table-column prop="sourceOrderNo" label="来源单号" :width="leftSourceOrderNoWidth" sortable :sort-method="sortByText('sourceOrderNo')" />
@@ -127,17 +168,20 @@
         </el-table>
       </div>
 
-      <div class="table-resizer" title="拖拽调整左表宽度" @mousedown="startResize" />
+      <div class="table-resizer" title="拖拽调整左表宽度" @mousedown="startResize" v-show="leftVisible && rightVisible" />
 
-      <div class="right-panel">
+      <div class="right-panel" v-show="rightVisible" @contextmenu="onTableContextMenu('right', $event)">
         <el-table
           ref="rightTable"
           :data="scheduledList"
           border
           height="100%"
+          :row-class-name="rightRowClass"
           @selection-change="handleRightSelection"
+          @row-contextmenu="(row, col, ev) => onRowContextMenu(row, col, ev, 'right')"
         >
           <el-table-column type="selection" width="26" label="选取" />
+          <el-table-column prop="sfahucstus" label="审核码" width="40" align="center" />
           <el-table-column type="index" label="项次" width="42" />
           <el-table-column prop="sourceOrderNo" label="来源单号" :width="rightSourceOrderNoWidth" />
           <el-table-column prop="seq" label="序号" width="42" />
@@ -153,8 +197,9 @@
                 filterable
                 clearable
                 :loading="lineLoading"
+                :disabled="row.sfahucstus === 'Y'"
                 placeholder="选择产线"
-                class="line-select"
+                :class="['line-select', { 'line-required': !row.productionLine }]"
                 style="width: 100%"
                 @visible-change="handleLineVisible(row, $event)"
               >
@@ -170,9 +215,57 @@
             </template>
           </el-table-column>
           <el-table-column prop="orderNo" label="生产数量" width="65" />
+          <el-table-column prop="issuedQty" label="已发料套数" width="70" align="right" />
           <el-table-column prop="stockInQty" label="入库量" width="70" />
           <el-table-column prop="balanceQty" label="余量" width="70" />
-          <el-table-column prop="upph" label="UPPH值" width="70" />
+          <el-table-column prop="upph" label="UPPH值" width="70" class-name="plan-cell">
+            <template #default="{ row }">
+              <el-input
+                v-model="row.upph"
+                size="small"
+                type="number"
+                class="plan-input"
+                :disabled="row.sfahucstus === 'Y'"
+                @input="recalcDailyOutput(row)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column prop="headcount" label="人数" width="64" class-name="plan-cell">
+            <template #default="{ row }">
+              <el-input
+                v-model="row.headcount"
+                size="small"
+                type="number"
+                class="plan-input"
+                :disabled="row.sfahucstus === 'Y'"
+                @input="recalcDailyOutput(row)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column prop="workHours" label="工作时长" width="80" class-name="plan-cell">
+            <template #default="{ row }">
+              <el-input
+                v-model="row.workHours"
+                size="small"
+                type="number"
+                class="plan-input"
+                :disabled="row.sfahucstus === 'Y'"
+                @input="recalcDailyOutput(row)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column prop="dailyOutput" label="日产量" width="80" class-name="plan-cell">
+            <template #default="{ row }">
+              <el-input
+                :model-value="row.dailyOutput"
+                size="small"
+                type="number"
+                class="plan-input"
+                readonly
+              />
+            </template>
+          </el-table-column>
+          <el-table-column prop="scheduleQty" label="排程数量" width="50" align="right" />
           <el-table-column label="预计开工" min-width="160">
             <template #default="{ row }">
               <el-date-picker
@@ -180,6 +273,7 @@
                 type="date"
                 placeholder="选择日期"
                 value-format="YYYY-MM-DD"
+                :disabled="row.sfahucstus === 'Y'"
                 style="width: 140px"
               />
             </template>
@@ -191,6 +285,7 @@
                 type="date"
                 placeholder="选择日期"
                 value-format="YYYY-MM-DD"
+                :disabled="row.sfahucstus === 'Y'"
                 style="width: 140px"
               />
             </template>
@@ -216,6 +311,7 @@
                 :min="0"
                 :controls="false"
                 size="small"
+                :disabled="row.sfahucstus === 'Y'"
                 :class="['daily-input', 'center-input', `daily-status-${row.dailyStatus || 'none'}`]"
                 @update:model-value="setDailyValue(row, date, $event)"
               />
@@ -223,15 +319,35 @@
           </el-table-column>
         </el-table>
       </div>
+      <!-- 折叠态：右侧排程表窄条，点击展开 -->
+      <div v-if="!rightVisible" class="collapsed-strip" @click="rightVisible = true" title="展开排程表">
+        <el-icon><ArrowLeft /></el-icon>
+        <span class="strip-text">排程表</span>
+      </div>
+    </div>
+
+    <!-- 右键菜单：左右两表通用（隐藏/显示 左表 未排工单明细表、右表 排程表） -->
+    <div
+      v-if="ctxMenu.visible"
+      class="ctx-menu"
+      :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
+      @contextmenu.prevent
+    >
+      <div class="ctx-menu-item" v-if="ctxMenu.target !== 'left'" @click="onHideLeft">隐藏左表 未排工单明细表</div>
+      <div class="ctx-menu-item" @click="onShowLeft">显示左表 未排工单明细表</div>
+      <div class="ctx-menu-item" v-if="ctxMenu.target !== 'right'" @click="onHideRight">隐藏右表 排程表</div>
+      <div class="ctx-menu-item" @click="onShowRight">显示右表 排程表</div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
-import { fetchPendingOrders, saveSchedule, fetchSavedSchedule, deleteSchedule, queryLine, queryUndeliveredOrders, saveDailyPlan, queryDailyPlan, queryItemBasicInfo, querySfahucExists, queryWorkOrder, WORK_ORDER_STATUS_MAP } from '../api/pendingOrders.js'
+import { reactive, ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
+import { fetchPendingOrders, saveSchedule, fetchSavedSchedule, deleteSchedule, queryLine, saveDailyPlan, queryItemBasicInfo, querySfahucExists, queryWorkOrder, WORK_ORDER_STATUS_MAP } from '../api/pendingOrders.js'
 import { queryDept } from '../api/budget.js'
+import { canFunc, MODULE, FUNC } from '../permission.js'
 
 /** 生成默认单号：年月日 + 001 */
 const genDocNo = () => {
@@ -242,17 +358,44 @@ const genDocNo = () => {
   return `${y}${m}${day}001`
 }
 
+/** 今天 + n 天，返回 YYYY-MM-DD（用于“生产日期”范围默认：今天 ~ 今天+7 天，含头尾） */
+function todayPlus(n) {
+  const d = new Date()
+  d.setDate(d.getDate() + n)
+  const p = (x) => String(x).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
 const form = reactive({
   orderNo: genDocNo(),
-  costCenter: '',
+  costCenter: [],
   customerOrderNo: '',
   orderSeq: '',
-  estimatedDate: '',
   site: 'NBYL',
   enterpriseCode: '60',
   workOrderNo: '',
-  itemNo: ''
+  itemNo: '',
+  // 查询目标：both=左右两表都发；left=只发左表 queryOrder；right=只发右表 querySfahuc
+  queryTarget: 'both',
+  // 生产日期范围（仅右表 querySfahuc 后端新增条件 prod_start/prod_end；默认今天 ~ 今天+7 天，含头尾）
+  prodDateStart: todayPlus(0),
+  prodDateEnd: todayPlus(7),
+  // 开单日期（起/止 可单独填，空则不发）
+  docDateStart: '',
+  docDateEnd: '',
+  // 预计开工日期（起/止）
+  planStartStart: '',
+  planStartEnd: '',
+  // 预计完工日期（起/止）
+  planEndStart: '',
+  planEndEnd: '',
+  // 工单状态码多选（M/C/F/N/X/Y，空数组=全部），发给后端以逗号分隔（如 F,N）
+  // 默认选中：已发放(F) + 未审核(N)
+  workOrderStatus: ['F', 'N']
 })
+
+/** 状态码下拉选项（来自权威映射 WORK_ORDER_STATUS_MAP） */
+const statusOptions = Object.keys(WORK_ORDER_STATUS_MAP).map(k => ({ value: k, label: WORK_ORDER_STATUS_MAP[k] }))
 
 /** 成本中心下拉选项 */
 const deptOptions = ref([])
@@ -265,64 +408,6 @@ const deptName = ref('')
 const lineOptions = ref([])
 /** 产线下拉加载状态 */
 const lineLoading = ref(false)
-
-/** 订单下拉选项（未交订单） */
-const orderOptions = ref([])
-/** 订单下拉加载状态 */
-const orderLoading = ref(false)
-/** 订单下拉选中值：docno||seq */
-const orderSelectValue = ref('')
-
-/** 加载未交订单列表 */
-let ordersLoaded = false
-let ordersLoadPromise = null
-const fetchOrders = async () => {
-  if (ordersLoaded) return ordersLoadPromise
-  if (orderLoading.value) return ordersLoadPromise
-  orderLoading.value = true
-  ordersLoadPromise = (async () => {
-  try {
-    const res = await queryUndeliveredOrders({ ent: form.enterpriseCode || '60' })
-    const list = res.data?.list ?? res.data?.master ?? res.data?.data ?? []
-    orderOptions.value = list.map(item => ({
-      key: `${item.docno || ''}||${item.seq || ''}`,
-      docno: item.docno || '',
-      seq: item.seq || '',
-      item: item.item || '',
-      docDate: String(item.docDate || '').substring(0, 10),
-      customer: item.customer || '',
-      label: item.label || '',
-      undeliveredQty: item.undeliveredQty ?? ''
-    }))
-    ordersLoaded = true
-  } catch (err) {
-    console.warn('加载订单列表失败:', err?.message || err)
-    ordersLoaded = false
-  } finally {
-    orderLoading.value = false
-  }
-  })()
-  return ordersLoadPromise
-}
-
-/** 选中订单后回填：docno -> 订单号，seq -> 订单序号 */
-const handleOrderChange = (val) => {
-  const hit = orderOptions.value.find(o => o.key === val)
-  if (hit) {
-    form.customerOrderNo = hit.docno
-    form.orderSeq = hit.seq
-  } else {
-    form.customerOrderNo = ''
-    form.orderSeq = ''
-  }
-}
-
-/** 下拉展开时刷新订单列表 */
-const handleOrderVisible = (visible) => {
-  if (visible) {
-    fetchOrders()
-  }
-}
 
 /** 产线选项缓存：key = 成本中心编号（空串表示不筛选） */
 const lineOptionCache = {}
@@ -380,19 +465,67 @@ const pendingList = ref([])
 const loading = ref(false)
 
 const scheduledList = ref([])
-/** 加载时保存的原始快照，用于判断是否有修改 */
-const originalScheduledJson = ref('')
+/** 保存时提交给后端的请求 JSON（展示在单头文本框，便于核对） */
+const saveJson = ref('')
+/** 加载时保存的精简签名，用于判断是否有修改（只比较落库字段） */
+const originalSignature = ref('')
 const leftSelected = ref([])
 const rightSelected = ref([])
+/** 点击「<」时登记的待删除行（保存时才真正调用删除接口） */
+const deletedRows = ref([])
 const leftTable = ref(null)
 const rightTable = ref(null)
-/** 左明细表宽度（初始 37.5%，拖拽后变为像素值） */
-const leftPanelWidth = ref('37.5%')
+/** 左明细表宽度（初始 5px，拖拽后变为像素值） */
+const leftPanelWidth = ref('5px')
 const tableArea = ref(null)
 const resizing = ref(false)
 
+/** 左/右表显隐：默认只显示右表(排程表)，左表(未排工单明细表)折叠为窄条，需要时再展开 */
+const leftVisible = ref(false)
+const rightVisible = ref(true)
+
+/** 左表初始宽度为 5px，直接展开会看不见，故展开时若尚未调整过宽度就给一个可用默认值 */
+const ensureLeftWidth = () => {
+  const cur = parseInt(leftPanelWidth.value, 10) || 0
+  if (cur >= 200) return // 用户已拖过，保留其宽度
+  const area = tableArea.value
+  if (!area) return
+  const max = Math.max(5, area.clientWidth - 420) // 为右表保留 420px
+  leftPanelWidth.value = `${Math.max(5, Math.min(420, max))}px`
+}
+const showLeft = () => { ensureLeftWidth(); leftVisible.value = true }
+const hideLeft = () => { leftVisible.value = false }
+const toggleLeft = () => { leftVisible.value = !leftVisible.value; if (leftVisible.value) ensureLeftWidth() }
+const toggleRight = () => { rightVisible.value = !rightVisible.value }
+
+/** 右键菜单（左右两表通用，不依赖具体行数据） */
+const ctxMenu = reactive({ visible: false, x: 0, y: 0, target: null })
+const onRowContextMenu = (row, column, event, target) => {
+  event.preventDefault()
+  ctxMenu.target = target || null
+  ctxMenu.x = event.clientX
+  ctxMenu.y = event.clientY
+  ctxMenu.visible = true
+}
+/** 面板级右键：空白区域（非数据行）也弹菜单；数据行由 @row-contextmenu 负责，此处跳过 */
+const onTableContextMenu = (target, event) => {
+  if (event.target?.closest?.('.el-table__row')) return
+  event.preventDefault()
+  ctxMenu.target = target || null
+  ctxMenu.x = event.clientX
+  ctxMenu.y = event.clientY
+  ctxMenu.visible = true
+}
+const closeCtxMenu = () => { ctxMenu.visible = false }
+const onEscClose = (e) => { if (e.key === 'Escape') closeCtxMenu() }
+const onHideLeft = () => { hideLeft(); closeCtxMenu() }
+const onShowLeft = () => { showLeft(); closeCtxMenu() }
+const onHideRight = () => { rightVisible.value = false; closeCtxMenu() }
+const onShowRight = () => { rightVisible.value = true; closeCtxMenu() }
+
 /** 拖拽调整左表宽度 */
 const startResize = (e) => {
+  if (e.button !== 0) return
   resizing.value = true
   document.body.style.cursor = 'col-resize'
   document.body.style.userSelect = 'none'
@@ -406,9 +539,8 @@ const onResizeMove = (e) => {
   const area = tableArea.value
   if (!area) return
   const rect = area.getBoundingClientRect()
-  const minW = 10
-  const maxW = Math.max(rect.width - 420, minW)
-  const w = Math.min(Math.max(e.clientX - rect.left, minW), maxW)
+  // 无任何宽度限制：左表可一直拖到最右（右表随之收窄），也可一直拖到最左
+  const w = Math.min(Math.max(e.clientX - rect.left, 0), rect.width)
   leftPanelWidth.value = `${w}px`
 }
 
@@ -542,14 +674,44 @@ const handleLineVisible = (row, visible) => {
 /** 组件挂载时只预加载成本中心和产线（都很小、快）；
  *  订单下拉数据量大，改为用户首次点开时才加载，避免首屏三个请求并发挤占 */
 onMounted(() => {
+  // 防御：进入页面时把左表宽度复位为默认固定像素值，
+  // 避免残留的拖拽状态（如松手在窗口外导致 mouseup 漏捕获）把宽度压到极小
+  leftPanelWidth.value = '5px'
   fetchAllDepts()
   fetchLines()
+  // 右键菜单：点击别处 / 滚动 / Esc 均关闭
+  document.addEventListener('click', closeCtxMenu)
+  window.addEventListener('scroll', closeCtxMenu, true)
+  document.addEventListener('keydown', onEscClose)
 })
 
-/** 成本中心值改变时回填名称 */
+/** 重新计算两张 el-table 的布局：首屏/数据就绪后调用，避免表格宽度为 0 或错乱 */
+const relayoutTables = () => {
+  nextTick(() => {
+    leftTable.value?.doLayout?.()
+    rightTable.value?.doLayout?.()
+  })
+}
+
+onUnmounted(() => {
+  // 清理拖拽残留的全局监听，防止跨实例/卸载后误触发改写宽度
+  resizing.value = false
+  document.removeEventListener('mousemove', onResizeMove)
+  document.removeEventListener('mouseup', stopResize)
+  // 清理右键菜单监听
+  document.removeEventListener('click', closeCtxMenu)
+  window.removeEventListener('scroll', closeCtxMenu, true)
+  document.removeEventListener('keydown', onEscClose)
+})
+
+/** 成本中心值改变时回填名称（多选时拼接多个名称） */
 const handleCostCenterChange = (val) => {
-  const found = deptOptions.value.find(o => o.value === val)
-  deptName.value = found ? found.label.split(' - ').slice(1).join(' - ') : ''
+  const vals = Array.isArray(val) ? val : (val ? [val] : [])
+  const names = vals.map(v => {
+    const found = deptOptions.value.find(o => o.value === v)
+    return found ? found.label.split(' - ').slice(1).join(' - ') : v
+  }).filter(Boolean)
+  deptName.value = names.join(' / ')
 }
 
 /** 下拉框展开时确保列表已加载（复用首次请求的 Promise，避免重复建连） */
@@ -559,203 +721,188 @@ const handleCostCenterVisible = (visible) => {
   }
 }
 
+/**
+ * 生成「是否修改」判定用的精简签名：只取会落库/影响结果的字段，
+ * 忽略 upph / stockInQty / balanceQty / workOrderStatus / dailyStatus 等展示字段，
+ * 并把 dailyPlan 中数值为 0 的项（渲染期自动补的空值）剔除，
+ * 避免「没有任何实际改动」却误判为已修改而重复请求后端。
+ */
+const toChangeSignature = (list) => JSON.stringify((list || []).map(r => ({
+  sfahucseq: r.sfahucseq || '',
+  workOrderNo: r.workOrderNo || '',
+  itemNo: r.itemNo || '',
+  orderNo: r.orderNo || '',
+  sourceOrderNo: r.sourceOrderNo || '',
+  seq: r.seq || '',
+  estimatedStartDate: toDate(r.estimatedStartDate),
+  estimatedEndDate: toDate(r.estimatedEndDate),
+  costCenterCode: r.costCenterCode || '',
+  costCenter: r.costCenter || '',
+  productionLine: r.productionLine || '',
+  dailyPlan: Object.fromEntries(
+    Object.entries(r.dailyPlan || {}).filter(([, v]) => Number(v) > 0)
+  )
+})))
+
 /** 从后端加载待排程工单和已保存的排程明细 */
+let loadRunSeq = 0
 const loadPendingOrders = async () => {
+  const runId = ++loadRunSeq
   loading.value = true
+  const t0 = performance.now()
+  const t = () => performance.now() - t0
+  const L = (msg) => console.log(`[R${runId}] ${msg} (+${t().toFixed(0)}ms)`)
+  const dur = (msg, ta) => console.log(`[R${runId}] ${msg}: ${(performance.now() - ta).toFixed(0)}ms`)
   try {
-    // 1. 加载左侧待排程工单
-    const reqBody = {
-      token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
-      sfaaent: form.enterpriseCode || '60',
-      sfaasite: form.site || 'NBYL',
-      orderNo: form.customerOrderNo || '',
-      sfaa068: form.costCenter || '',
-      sfaadocno: form.workOrderNo || '',
-      sfaa010: form.itemNo || '',
-      rowMax: 200
-    }
-    const [res] = await Promise.all([
-      fetchPendingOrders(reqBody),
-      ensureDeptMap()
-    ])
-    const rawList = res.data?.master ?? res.data?.data ?? []
-    pendingList.value = rawList.map(item => ({
-      orderNo: item.sfaa012 || '',
-      seq: item.sfaa023 || '',
-      itemNo: item.sfaa010 || '',
-      costCenterCode: item.sfaa068 || '',
-      costCenter: item.ooefl003 || '',
-      sourceOrderNo: item.sfaa022 || '',
-      workOrderNo: item.sfaadocno || '',
-      estimatedStartDate: item.sfaa019 || '',
-      estimatedEndDate: item.sfaa020 || '',
-      stockInQty: item.sfaa050 ?? '',
-      balanceQty: item['余量'] ?? '',
-      workOrderStatus: mapWorkOrderStatus(item.sfaastus)
-    }))
-    await fillUpph(pendingList.value)
+    // 0. 组装日期范围 / 状态码 扩展查询条件（起/止 可单独填，只发填了的）
+    const target = form.queryTarget || 'both'
+    const dateCond = {}
+    if (form.docDateStart) dateCond.sfaadocdt_start = form.docDateStart
+    if (form.docDateEnd) dateCond.sfaadocdt_end = form.docDateEnd
+    if (form.planStartStart) dateCond.sfaa019_start = form.planStartStart
+    if (form.planStartEnd) dateCond.sfaa019_end = form.planStartEnd
+    if (form.planEndStart) dateCond.sfaa020_start = form.planEndStart
+    if (form.planEndEnd) dateCond.sfaa020_end = form.planEndEnd
+    if (form.workOrderStatus.length) dateCond.sfaastus = form.workOrderStatus.join(',')
+    // 生产日期范围：仅右表 querySfahuc 的后端新增条件（prod_start/prod_end），左表 queryOrder 不发
+    const prodCond = {}
+    if (form.prodDateStart) prodCond.prod_start = form.prodDateStart
+    if (form.prodDateEnd) prodCond.prod_end = form.prodDateEnd
+    // 按「查询目标」决定这些扩展条件发给哪一侧
+    const leftCond = (target === 'left' || target === 'both') ? dateCond : {}
+    const rightCond = (target === 'right' || target === 'both') ? { ...dateCond, ...prodCond } : {}
 
-    // 2. 加载右侧已保存排程明细（fetchSavedSchedule 内部只发送已填写的条件）
-    let savedRes
-    try {
-      savedRes = await fetchSavedSchedule({
-        enterpriseCode: form.enterpriseCode,
-        site: form.site,
-        costCenter: form.costCenter,
-        customerOrderNo: form.customerOrderNo,
-        orderSeq: form.orderSeq
-      })
-    } catch (e) {
-      console.error('[querySfahuc] 查询异常', e)
-      scheduledList.value = []
-      // 异常不阻断继续（左侧查询仍可走）
-    }
-    if (savedRes) {
-      const rawSaved = savedRes.data?.master ?? savedRes.data?.data ?? []
-      scheduledList.value = rawSaved.map(item => ({
-        sfahucseq: item.sfahucseq || '',
-        workOrderNo: item.sfahuc001 || '',
-        itemNo: item.sfahuc002 || '',
-        orderNo: item.sfahuc003 || '',
-        sourceOrderNo: item.sfahuc004 || '',
-        seq: item.sfahuc005 || '',
-        estimatedStartDate: item.sfahuc006 || '',
-        estimatedEndDate: item.sfahuc007 || '',
-        costCenterCode: item.sfahuc008 || '',
-        costCenter: item.costCenter || '',
-        productionLine: item.sfahuc010 || item.productionLine || '',
-        dailyPlan: item.dailyPlan || {}
+    // 1. 左表 queryOrder：仅「仅左表 / 左右两表」时调用并刷新左表
+    if (target === 'left' || target === 'both') {
+      const reqBody = {
+        token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
+        sfaaent: form.enterpriseCode || '60',
+        sfaasite: form.site || 'NBYL',
+        orderNo: form.customerOrderNo || '',
+        sfaa068: (form.costCenter || []).join(','),
+        sfaadocno: form.workOrderNo || '',
+        sfaa010: form.itemNo || '',
+        rowMax: 100,
+        ...leftCond
+      }
+      const [res] = await Promise.all([
+        (async () => { const ta = performance.now(); const r = await fetchPendingOrders(reqBody); dur('queryOrder', ta); return r })()
+      ])
+      const rawList = res.data?.master ?? res.data?.data ?? []
+      pendingList.value = rawList.map(item => ({
+        orderNo: item.sfaa012 || '',
+        seq: item.sfaa023 || '',
+        itemNo: item.sfaa010 || '',
+        costCenterCode: item.sfaa068 || '',
+        costCenter: item.ooefl003 || '',
+        sourceOrderNo: item.sfaa022 || '',
+        workOrderNo: item.sfaadocno || '',
+        estimatedStartDate: item.sfaa019 || '',
+        estimatedEndDate: item.sfaa020 || '',
+        issuedQty: item.sfaa049 ?? '',         // 已发料套数（随左表工单信息带入）
+        stockInQty: item.sfaa050 ?? '',
+        balanceQty: item['余量'] ?? '',
+        upph: item.UPPH ?? item.upph ?? '',
+        workOrderStatus: mapWorkOrderStatus(item.sfaastus)
       }))
-      // 已保存明细若产线为空：按本行成本中心取第一条产线作为默认
-      await Promise.all(scheduledList.value.map(async (r) => {
-        if (!r.productionLine) {
-          r.productionLine = await getDefaultLine(r.costCenterCode)
+      L(`左表就绪（queryOrder），共 ${pendingList.value.length} 行`)
+    } else {
+      L('查询目标=仅右表，跳过左表 queryOrder，左表不刷新')
+    }
+
+    // 2. 右表 querySfahuc：仅「仅右表 / 左右两表」时调用并刷新右表
+    if (target === 'right' || target === 'both') {
+      try {
+        const ta = performance.now()
+        const savedRes = await fetchSavedSchedule({
+          enterpriseCode: form.enterpriseCode,
+          site: form.site,
+          costCenter: (form.costCenter || []).join(','),
+          customerOrderNo: form.customerOrderNo,
+          orderSeq: form.orderSeq,
+          ...rightCond
+        })
+        dur('fetchSavedSchedule', ta)
+        const rawSaved = savedRes.data?.master ?? savedRes.data?.data ?? []
+        scheduledList.value = rawSaved.map(item => ({
+          sfahucseq: item.sfahucseq || '',
+          sfahucstus: item.sfahucstus || '',   // 审核码（查询回写）
+          workOrderNo: item.sfahuc001 || '',
+          itemNo: item.sfahuc002 || '',
+          orderNo: item.sfahuc003 || '',
+          sourceOrderNo: item.sfahuc004 || '',
+          seq: item.sfahuc005 || '',
+          estimatedStartDate: item.sfahuc006 || '',
+          estimatedEndDate: item.sfahuc007 || '',
+          costCenterCode: item.sfahuc008 || '',
+          costCenter: item.costCenter || '',
+          productionLine: item.sfahuc010 || item.productionLine || '',
+          scheduleQty: item.sfahuc016 != null && item.sfahuc016 !== '' ? Number(item.sfahuc016) : (Number(item.sfahuc003) || 0), // 排程数量（查询回写，缺省取生产数量）
+          // UPPH / 工单状态 / 入库量 / 余量 已由后端随 querySfahuc 一并返回
+          // UPPH 值：优先取 querySfahuc 的 sfahuc014；左表(添加)拖入时沿用 queryOrder 的 upph（item.upph）
+          upph: item.sfahuc014 ?? item.upph ?? '',
+          headcount: item.sfahuc012 || '',
+          workHours: item.sfahuc013 || '',
+          dailyOutput: (Number(item.sfahuc012) || 0) * (Number(item.sfahuc013) || 0) * (Number(item.sfahuc014) || 0),
+          workOrderStatus: mapWorkOrderStatus(item.sfaastus),
+          issuedQty: item.sfaa049 ?? '',       // 已发料套数（querySfahuc 返回）
+          stockInQty: item.sfaa050 ?? '',
+          balanceQty: item['余量'] ?? '',
+          // 日计划已随 querySfahuc 以「排产子表」返回，这里行转列成 {日期:数量}
+          dailyPlan: subToDailyPlan(item['排产子表'])
+        }))
+        // 「左右两表」时才用右表已排程项过滤左表（仅右表时左表不刷新，不过滤）
+        if (target === 'both') {
+          const scheduledKeys = new Set(scheduledList.value.map(r => `${r.sourceOrderNo}||${r.workOrderNo}`))
+          pendingList.value = pendingList.value.filter(r => !scheduledKeys.has(`${r.sourceOrderNo}||${r.workOrderNo}`))
         }
-      }))
-      await fillUpph(scheduledList.value)
-      await fillOrderExtra(scheduledList.value)
-      scheduledList.value.forEach(refreshDailyStatus)
+        // 每日计划已由后端随 querySfahuc 一并返回（排产子表 -> dailyPlan），无需逐行调用 loadDailyPlans
+        // 计算每行日计划合计 vs 生产数量的对比状态
+        scheduledList.value.forEach(refreshDailyStatus)
+        relayoutTables()
+        L(`右表就绪，共 ${scheduledList.value.length} 行`)
+      } catch (e) {
+        console.error('[querySfahuc] 查询异常', e)
+      }
+    } else {
+      L('查询目标=仅左表，跳过右表 querySfahuc，右表不刷新')
     }
 
-    // 3. 过滤左侧：已存在于右侧的（订单号+工单号一致）不显示
-    if (scheduledList.value.length > 0) {
-      const scheduledKeys = new Set(scheduledList.value.map(r => `${r.sourceOrderNo}||${r.workOrderNo}`))
-      pendingList.value = pendingList.value.filter(r => !scheduledKeys.has(`${r.sourceOrderNo}||${r.workOrderNo}`))
-    }
-
-    // 4. 二次校验：左侧每条记录按 订单号+订单序号+工单号 查数据库，
-    //    若 querySfahuc 返回 sfahuc001 有值，说明数据库已存在该记录，则不显示在左边。
-    //    限制并发（一次最多 4 个），避免大量记录同时请求拖慢首屏。
-    const existingInDb = new Set()
-    const pendingRows = pendingList.value
-    const CONCURRENCY = 4
-    for (let i = 0; i < pendingRows.length; i += CONCURRENCY) {
-      const batch = pendingRows.slice(i, i + CONCURRENCY)
-      await Promise.all(batch.map(async (r) => {
-        try {
-          const res = await querySfahucExists({
-            orderNo: r.sourceOrderNo,
-            orderSeq: r.orderSeq,
-            workOrderNo: r.workOrderNo
-          })
-          const master = res.data?.master ?? res.data?.data ?? []
-          if (Array.isArray(master) && master.length > 0 && master[0].sfahuc001) {
-            existingInDb.add(`${r.sourceOrderNo}||${r.workOrderNo}`)
-          }
-        } catch (e) {
-          // 查询异常不阻断：默认视为不存在，保留显示
-        }
-      }))
-    }
-    if (existingInDb.size > 0) {
-      pendingList.value = pendingList.value.filter(r => !existingInDb.has(`${r.sourceOrderNo}||${r.workOrderNo}`))
-    }
-
-    // 3.5 加载右侧每行的每日计划数量
-    await loadDailyPlans()
-
-    // 4. 保存原始快照，用于判断保存时是否有修改
-    originalScheduledJson.value = JSON.stringify(scheduledList.value)
-  } catch (err) {
-    ElMessage.error('获取待排程工单失败: ' + (err.response?.data?.message || err.message))
-  } finally {
     loading.value = false
+  } catch (err) {
+    loading.value = false
+    ElMessage.error('获取待排程工单失败: ' + (err.response?.data?.message || err.message))
   }
 }
 
-/** 生成某行的日期列表（预计开工 ~ 预计完工，每天一个），用于逐日查询兜底 */
-const rowDateRange = (row) => {
-  const start = toDate(row.estimatedStartDate)
-  const end = toDate(row.estimatedEndDate)
-  if (!start || !end || start > end) return []
-  const list = []
-  const cur = parseYMD(start)
-  const last = parseYMD(end)
-  while (cur.getTime() <= last.getTime()) {
-    list.push(formatYMD(cur))
-    cur.setDate(cur.getDate() + 1)
-  }
-  return list
-}
-
-/** 加载右侧每行的每日计划数量，回填到 row.dailyPlan */
-const loadDailyPlans = async () => {
-  const rows = scheduledList.value.filter(r => r.workOrderNo)
-  if (rows.length === 0) return
-
-  const pick = (plan, list) => {
-    for (const item of list || []) {
-      const date = String(item.sfajuc007 ?? '').substring(0, 10)
-      const qty = item.sfajuc003 ?? item['数量']
+/** 把后端随 querySfahuc 返回的「排产子表」([{排产日期,排产数量}]) 行转列成 {日期:数量}
+ *  原 loadDailyPlans 逐行请求后端的方式已废弃：日计划现在由后端一次性随主表返回。 */
+const subToDailyPlan = (sub) => {
+  const plan = {}
+  if (Array.isArray(sub)) {
+    sub.forEach(s => {
+      const date = String(s['排产日期'] ?? s.sfajuc007 ?? '').substring(0, 10)
+      const qty = s['排产数量'] ?? s.sfajuc003
       if (date && qty !== undefined && qty !== null && qty !== '') {
         plan[date] = Number(qty)
       }
-    }
+    })
   }
-
-  await Promise.all(rows.map(async (row) => {
-    const plan = {}
-    const base = { sfajuc001: row.workOrderNo || '', sfajuc004: row.productionLine || '' }
-    try {
-      // 先按工单号 + 产线查询（日期留空，取全部日期）
-      const res = await queryDailyPlan({ ...base, sfajuc007: '' })
-      pick(plan, res.data?.master ?? res.data?.data ?? [])
-    } catch (err) {
-      console.warn('查询日计划失败:', err?.message || err)
-    }
-    // 后端必须按日期查询时，按该行日期范围逐日查询兜底
-    if (Object.keys(plan).length === 0) {
-      const dates = rowDateRange(row)
-      if (dates.length > 0) {
-        const results = await Promise.allSettled(dates.map(d => queryDailyPlan({ ...base, sfajuc007: d })))
-        results.forEach(r => {
-          if (r.status === 'fulfilled') pick(plan, r.value.data?.master ?? r.value.data?.data ?? [])
-        })
-      }
-    }
-    row.dailyPlan = plan
-  }))
+  return plan
 }
 
-/** 品号 → UPPH 缓存，避免重复请求 */
-const upphCache = {}
-/** 按品号调 queryItemBasicInfo 取 UPPH，回填到 rows 的 upph 字段 */
-const fillUpph = async (rows) => {
-  const targets = rows.filter(r => r.itemNo && r.upph === undefined)
-  if (targets.length === 0) return
-  // 去重：同一品号只查一次
-  const itemNos = [...new Set(targets.map(r => r.itemNo))]
-  await Promise.all(itemNos.map(async (imae001) => {
-    if (upphCache[imae001] !== undefined) return
-    try {
-      const res = await queryItemBasicInfo(imae001)
-      const rec = res.data?.data?.[0] ?? {}
-      upphCache[imae001] = rec.UPPH ?? rec.upph ?? ''
-    } catch (e) {
-      upphCache[imae001] = ''
+/** 并发受限的 map：每次最多 limit 个 fn 在途，避免一次性涌出大量请求拖慢后端/网关 */
+const mapWithConcurrency = async (items, fn, limit = 8) => {
+  const ret = []
+  let i = 0
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (i < items.length) {
+      const idx = i++
+      ret[idx] = await fn(items[idx], idx)
     }
-  }))
-  targets.forEach(r => { r.upph = upphCache[r.itemNo] ?? '' })
+  })
+  await Promise.all(workers)
+  return ret
 }
 
 /** 工单状态码 sfaastus → 中文；未匹配时原样返回 */
@@ -765,64 +912,7 @@ const mapWorkOrderStatus = (sfaastus) => {
   return WORK_ORDER_STATUS_MAP[code] ?? code
 }
 
-/**
- * 工单号 → { 工单结案 workOrderStatus, 入库量 stockInQty, 余量 balanceQty }
- * 缓存避免重复请求；已带这些字段的行（如从左侧移过来的）不重复请求。
- * 用于右侧从数据库加载的场景（querySfahuc 返回的 sfahuc* 字段不含这三项）。
- */
-const orderExtraCache = {}
-const fillOrderExtra = async (rows) => {
-  const targets = rows.filter(r =>
-    r.workOrderNo && (r.stockInQty === undefined || r.workOrderStatus === undefined)
-  )
-  if (targets.length === 0) return
-  const docnos = [...new Set(targets.map(r => r.workOrderNo))]
-  const CONCURRENCY = 4
-  for (let i = 0; i < docnos.length; i += CONCURRENCY) {
-    const batch = docnos.slice(i, i + CONCURRENCY)
-    await Promise.all(batch.map(async (sfaadocno) => {
-      if (orderExtraCache[sfaadocno] !== undefined) return
-      // 1) 优先：一次 queryOrder 同时取 sfaastus / sfaa050 / 余量
-      let hit = null
-      try {
-        const res = await fetchPendingOrders({ sfaadocno, rowMax: 1 })
-        const master = res.data?.master ?? res.data?.data ?? []
-        hit = master.find(m => m.sfaadocno === sfaadocno) || master[0] || null
-      } catch (e) {
-        hit = null
-      }
-      if (hit) {
-        orderExtraCache[sfaadocno] = {
-          workOrderStatus: mapWorkOrderStatus(hit.sfaastus),
-          stockInQty: hit.sfaa050 ?? '',
-          balanceQty: hit['余量'] ?? ''
-        }
-        return
-      }
-      // 2) 兜底：queryOrder 查不到该工单（例如工单已结案，不在待排程列表中），
-      //    改用 queryWorkOrder 单独取状态码，数量字段留空
-      let status = ''
-      try {
-        const wres = await queryWorkOrder(sfaadocno)
-        const head = wres.data?.head ?? wres.data?.data ?? []
-        status = Array.isArray(head) && head.length > 0 ? (head[0].sfaastus ?? '') : ''
-      } catch (e) {
-        status = ''
-      }
-      orderExtraCache[sfaadocno] = {
-        workOrderStatus: mapWorkOrderStatus(status),
-        stockInQty: '',
-        balanceQty: ''
-      }
-    }))
-  }
-  targets.forEach(r => {
-    const c = orderExtraCache[r.workOrderNo]
-    if (r.workOrderStatus === undefined) r.workOrderStatus = c?.workOrderStatus ?? ''
-    if (r.stockInQty === undefined) r.stockInQty = c?.stockInQty ?? ''
-    if (r.balanceQty === undefined) r.balanceQty = c?.balanceQty ?? ''
-  })
-}
+
 
 const handleLeftSelection = (rows) => {
   leftSelected.value = rows
@@ -830,6 +920,17 @@ const handleLeftSelection = (rows) => {
 
 const handleRightSelection = (rows) => {
   rightSelected.value = rows
+}
+
+/** 行级 class：已审核（sfahucstus=Y）的行标记为只读，前端置灰 + 不可编辑/删除/保存 */
+const rightRowClass = ({ row }) => (row.sfahucstus === 'Y' ? 'locked-row' : '')
+
+/** 重算某行 日产量 = 人数 × 工作时长 × UPPH值 */
+const recalcDailyOutput = (row) => {
+  const h = Number(row.headcount) || 0
+  const w = Number(row.workHours) || 0
+  const u = Number(row.upph) || 0
+  row.dailyOutput = h * w * u
 }
 
 const moveToRight = async () => {
@@ -845,57 +946,68 @@ const moveToRight = async () => {
   const newRows = await Promise.all(selected.map(async (item) => ({
     ...item,
     productionLine: item.productionLine || await getDefaultLine(item.costCenterCode),
+    // 排程数量默认 = 生产数量（工单数量）；车间计划排程无独立订单需求量，按工单数量取
+    scheduleQty: Number(item.orderNo) || 0,
+    headcount: '',
+    workHours: '',
+    dailyOutput: 0,
     dailyPlan: {}
   })))
   scheduledList.value.push(...newRows)
   pendingList.value = pendingList.value.filter(item => !selectedKeys.has(`${item.sourceOrderNo}||${item.workOrderNo}`))
   leftSelected.value = []
   leftTable.value?.clearSelection()
-  await fillUpph(scheduledList.value)
   scheduledList.value.forEach(refreshDailyStatus)
   ElMessage.success('已加入排程')
 }
 
-const moveToLeft = async () => {
+const moveToLeft = () => {
   if (rightSelected.value.length === 0) {
     ElMessage.warning('请选择排程工单')
     return
   }
-  const selected = [...rightSelected.value]
-
-  // 向后端发送删除请求：按 工单号(sfahuc001) + 品号(sfahuc002) + 成本中心(sfahuc008) 定位
-  const deletePayloads = selected.map(item => ({
-    sfahucent: form.enterpriseCode || '',
-    sfahucsite: form.site || '',
-    sfahuc001: item.workOrderNo || '',
-    sfahuc002: item.itemNo || '',
-    sfahuc008: item.costCenterCode || ''
-  }))
-
-  const deleteResults = await Promise.allSettled(deletePayloads.map(payload => deleteSchedule(payload)))
-  // 检查是否全部删除成功（后端返回 success=true 且 deleted=true）
-  const failedIndexes = []
-  deleteResults.forEach((result, i) => {
-    if (result.status === 'fulfilled') {
-      const data = result.value?.data
-      const ok = data?.success === true && data?.deleted === true
-      if (!ok) failedIndexes.push(i)
-    } else {
-      failedIndexes.push(i)
-    }
-  })
-
-  if (failedIndexes.length > 0) {
-    ElMessage.error(`有 ${failedIndexes.length} 条删除失败，已取消移回操作`)
+  // 已审核（Y）的行只读，禁止移回/删除
+  const selectedAll = [...rightSelected.value]
+  const selected = selectedAll.filter(item => item.sfahucstus !== 'Y')
+  const lockedCount = selectedAll.length - selected.length
+  if (selected.length === 0) {
+    ElMessage.warning('所选行均为已审核状态，不能移回待排程')
     return
   }
+  if (lockedCount > 0) {
+    ElMessage.warning(`已跳过 ${lockedCount} 条已审核行（只读，不可移回）`)
+  }
+  // 先确认：选「确认删除」才继续，点「取消」或直接关闭对话框都不进行任何操作
+  ElMessageBox.confirm(
+    '确定将所选排程工单移回待排程吗？保存时会一并删除这些已保存的记录。',
+    '确认移回',
+    { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' }
+  ).then(() => {
+    const selectedKeys = new Set(selected.map(item => `${item.sourceOrderNo}||${item.workOrderNo}`))
 
-  const selectedKeys = new Set(selected.map(item => `${item.sourceOrderNo}||${item.workOrderNo}`))
-  pendingList.value = [...selected, ...pendingList.value]
-  scheduledList.value = scheduledList.value.filter(item => !selectedKeys.has(`${item.sourceOrderNo}||${item.workOrderNo}`))
-  rightSelected.value = []
-  rightTable.value?.clearSelection()
-  ElMessage.success('已移回待排程')
+    // 点击「<」时不立即删除：把所选行移回左侧（待排程）展示，
+    // 并登记为「待删除」，待点「保存」时才调用删除接口。
+    // 仅对曾经保存过的行（有 sfahucseq）登记删除，新加且未保存的行无需删除。
+    for (const item of selected) {
+      if (item.sfahucseq) {
+        deletedRows.value.push({
+          sfahucent: form.enterpriseCode || '',
+          sfahucsite: form.site || '',
+          sfahuc001: item.workOrderNo || '',
+          sfahuc002: item.itemNo || '',
+          sfahuc008: item.costCenterCode || ''
+        })
+      }
+    }
+
+    pendingList.value = [...selected, ...pendingList.value]
+    scheduledList.value = scheduledList.value.filter(item => !selectedKeys.has(`${item.sourceOrderNo}||${item.workOrderNo}`))
+    rightSelected.value = []
+    rightTable.value?.clearSelection()
+    ElMessage.success('已移回待排程，点保存时一并删除')
+  }).catch(() => {
+    // 取消或关闭对话框：不执行任何操作
+  })
 }
 
 /** 只取日期部分 YYYY-MM-DD */
@@ -1017,10 +1129,44 @@ const setDailyValue = (row, date, val) => {
   return true
 }
 
+/** 取当前登录账号（登录时写入 localStorage 的 userAccount） */
+const currentUserAccount = () => localStorage.getItem('userAccount') || ''
+
+/** 构造 /saveSfhac 的 list 项；forceStatus 非空时强制覆盖每行的 sfahucstus（用于审核置 'Y'） */
+const buildSavePayload = (rows, forceStatus) => rows.map((item, index) => ({
+  sfahucent: '60',                              // 企业代码
+  sfahucsite: form.site || '',                  // 营运据点
+  sfahucdocno: form.orderNo || '',              // 单号
+  sfahucseq: item.sfahucseq || (index + 1),     // 项次（已保存行沿用原序号）
+  sfahuc001: item.workOrderNo || '',            // 工单单号
+  sfahuc008: item.costCenterCode || '',         // 成本中心编码
+  sfahuc002: item.itemNo || '',                 // 品号
+  sfahuc003: item.orderNo || '',                // 数量（生产数量）
+  sfahuc004: item.sourceOrderNo || '',          // 订单号
+  sfahuc005: item.seq || '',                    // 订单序号
+  sfahuc006: toDate(item.estimatedStartDate),   // 开工日期
+  sfahuc007: toDate(item.estimatedEndDate),     // 完工日期
+  sfahuc009: '',                                // 已入库数量（暂无）
+  sfahuc010: item.productionLine || '',         // 产线（OOELUC003）
+  sfahuc012: item.headcount != null && item.headcount !== '' ? String(item.headcount) : '0',
+  sfahuc013: item.workHours != null && item.workHours !== '' ? String(item.workHours) : '0',
+  sfahuc014: item.upph != null && item.upph !== '' ? String(item.upph) : '0',
+  sfahuc015: item.dailyOutput != null && item.dailyOutput !== '' ? String(item.dailyOutput) : '0',
+  sfahuc016: item.scheduleQty != null && item.scheduleQty !== '' ? String(item.scheduleQty) : '', // 排程数量
+  sfahucstus: forceStatus || item.sfahucstus || '',
+  userid: currentUserAccount()
+}))
+
 /** 保存右侧排程明细 */
 const handleSave = async () => {
-  if (scheduledList.value.length === 0) {
+  // 既无排程行也无待删除记录 → 无需保存
+  if (scheduledList.value.length === 0 && deletedRows.value.length === 0) {
     ElMessage.warning('没有需要保存的排程数据')
+    return
+  }
+  // 有排程行但全部已审核只读 → 无需保存
+  if (scheduledList.value.length > 0 && scheduledList.value.every(r => r.sfahucstus === 'Y') && deletedRows.value.length === 0) {
+    ElMessage.warning('所有排程行均已审核为只读，无需保存')
     return
   }
   // 校验预计开工、预计完工必填
@@ -1037,33 +1183,56 @@ const handleSave = async () => {
     ElMessage.warning(`第${idx}项日计划数量合计超过生产数量，请调整后再保存`)
     return
   }
+  // 有待删除记录未提交到后端 → 先让操作员确认（取消/关闭则中止本次保存）
+  if (deletedRows.value.length > 0) {
+    try {
+      await ElMessageBox.confirm(
+        `本次保存将同时删除 ${deletedRows.value.length} 条已保存的排程记录，是否继续？`,
+        '确认删除',
+        { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' }
+      )
+    } catch (e) {
+      ElMessage.info('已取消保存')
+      return
+    }
+  }
   // 保存前按站点刷新成本中心名称，保证落库的是站点对应的名称
   await ensureDeptMap()
   for (const row of scheduledList.value) syncCostCenterName(row)
-  // 与加载时的原始数据对比，无修改则跳过保存
-  const currentJson = JSON.stringify(scheduledList.value)
-  if (currentJson === originalScheduledJson.value) {
+  // 与加载时的原始签名对比（只比较落库字段，忽略运行期填充的 0 与展示字段）；
+  // 无任何改动且无待删除行时，不发送任何请求到后端
+  const currentSig = toChangeSignature(scheduledList.value)
+  if (deletedRows.value.length === 0 && currentSig === originalSignature.value) {
     ElMessage.info('排程数据无修改，无需保存')
     return
   }
   try {
-    const payload = scheduledList.value.map((item, index) => ({
-      sfahucent: '60',                    // 企业代码（暂无）
-      sfahucsite: form.site || '',      // 营运据点
-      sfahucdocno: form.orderNo || '',  // 单号
-      sfahucseq: index + 1,             // 项次
-      sfahuc001: item.workOrderNo || '',        // 工单单号
-      sfahuc008: item.costCenterCode || '',      // 成本中心编码
-      sfahuc002: item.itemNo || '',             // 品号
-      sfahuc003: item.orderNo || '',            // 数量（生产数量）
-      sfahuc004: item.sourceOrderNo || '',      // 订单号
-      sfahuc005: item.seq || '',                // 订单序号
-      sfahuc006: toDate(item.estimatedStartDate), // 开工日期
-      sfahuc007: toDate(item.estimatedEndDate),   // 完工日期
-      sfahuc009: '',                     // 已入库数量（暂无）
-      sfahuc010: item.productionLine || ''  // 产线（OOELUC003）
-    }))
-    await saveSchedule(payload)
+    // 0) 处理点「<」时登记的待删除行：此时才真正调用删除接口
+    if (deletedRows.value.length > 0) {
+      const deleteResults = await Promise.allSettled(
+        deletedRows.value.map(payload => deleteSchedule(payload))
+      )
+      const failed = deleteResults.filter(r =>
+        r.status !== 'fulfilled' ||
+        !(r.value?.data?.success === true && r.value?.data?.deleted === true)
+      )
+      if (failed.length > 0) {
+        ElMessage.error(`有 ${failed.length} 条排程删除失败，已取消保存`)
+        return
+      }
+      deletedRows.value = []
+    }
+
+    // 已审核（Y）的行只读，保存时排除，不发送给后端
+    const payload = buildSavePayload(scheduledList.value.filter(r => r.sfahucstus !== 'Y'))
+    // 实际提交给后端的完整请求体（/saveSfahuc）
+    const requestBody = {
+      token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
+      userid: currentUserAccount(),
+      list: payload
+    }
+    saveJson.value = JSON.stringify(requestBody, null, 2)
+    await saveSchedule(payload, currentUserAccount())
 
     // 保存每日计划数量：只送数量大于 0 的日期，每个日期一条
     const dailyList = []
@@ -1086,10 +1255,56 @@ const handleSave = async () => {
       await saveDailyPlan(dailyList)
     }
 
-    originalScheduledJson.value = currentJson
+    originalSignature.value = currentSig
     ElMessage.success('保存成功')
   } catch (err) {
     ElMessage.error('保存失败: ' + (err.response?.data?.message || err.message))
+  }
+}
+
+/** 审核：将所选右表行的 sfahucstus 置为 'Y' 并调用 /saveSfhac 保存（未选行则报警不发送） */
+const handleAudit = async () => {
+  if (rightSelected.value.length === 0) {
+    ElMessage.warning('请先勾选要审核的排程行')
+    return
+  }
+  try {
+    // 本地先标记审核码，列表立即刷新
+    for (const row of rightSelected.value) row.sfahucstus = 'Y'
+    const payload = buildSavePayload(rightSelected.value, 'Y')
+    const requestBody = {
+      token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
+      userid: currentUserAccount(),
+      list: payload
+    }
+    saveJson.value = JSON.stringify(requestBody, null, 2)
+    await saveSchedule(payload, currentUserAccount())
+    ElMessage.success(`已审核 ${payload.length} 行`)
+  } catch (err) {
+    ElMessage.error('审核失败: ' + (err.response?.data?.message || err.message))
+  }
+}
+
+/** 取消审核：将所选右表行的 sfahucstus 置为 'N' 并调用 /saveSfahuc 保存 */
+const handleCancelAudit = async () => {
+  if (rightSelected.value.length === 0) {
+    ElMessage.warning('请先勾选要取消审核的排程行')
+    return
+  }
+  try {
+    // 本地先标记审核码为 N，列表立即刷新（取消只读）
+    for (const row of rightSelected.value) row.sfahucstus = 'N'
+    const payload = buildSavePayload(rightSelected.value, 'N')
+    const requestBody = {
+      token: 'e6338a4acxw502kmf5dwr316ss8u0ymb',
+      userid: currentUserAccount(),
+      list: payload
+    }
+    saveJson.value = JSON.stringify(requestBody, null, 2)
+    await saveSchedule(payload, currentUserAccount())
+    ElMessage.success(`已取消审核 ${payload.length} 行`)
+  } catch (err) {
+    ElMessage.error('取消审核失败: ' + (err.response?.data?.message || err.message))
   }
 }
 </script>
@@ -1123,17 +1338,17 @@ const handleSave = async () => {
 
 /* 表头居中 */
 .schedule-page :deep(.el-table) {
-  border-color: #000;
+  border-color: #ebeef5;
 }
 .schedule-page :deep(.el-table th.el-table__cell),
 .schedule-page :deep(.el-table td.el-table__cell) {
-  border-color: #000;
+  border-color: #ebeef5;
 }
 
 .schedule-page :deep(.el-table th.el-table__cell) {
   text-align: center;
-  background: #d6eaf8 !important;
-  color: #303133;
+  background: #1e90ff !important;
+  color: #fff;
 }
 
 /* 表头与勾选框居中 */
@@ -1160,14 +1375,15 @@ const handleSave = async () => {
   justify-content: center;
 }
 
-/* 表头 hover 也保持浅蓝 */
+/* 表头 hover 也保持蓝色 */
 .schedule-page :deep(.el-table th.el-table__cell:hover) {
-  background: #d6eaf8 !important;
+  background: #1e90ff !important;
 }
 
 .basic-card {
   margin-bottom: 8px;
   flex-shrink: 0;
+  height: 130px;
 }
 
 
@@ -1179,6 +1395,38 @@ const handleSave = async () => {
 
 .basic-form {
   margin-right:-10px ;
+}
+
+/* 单头各字段行间距 3px */
+.basic-form .el-form-item {
+  margin-bottom: 3px;
+}
+
+/* 状态码多选：宽度随已选文字自动调整，不固定 */
+.status-select {
+  width: auto !important;
+  min-width: 96px;
+}
+
+/* 表头所有输入控件统一高度 24px */
+.basic-form .el-input__wrapper,
+.basic-form .el-select__wrapper,
+.basic-form .el-select-v2__wrapper {
+  min-height: 24px;
+  height: 24px;
+}
+.basic-form .el-date-editor {
+  --el-date-editor-width: auto;
+  height: 24px;
+}
+.basic-form .el-button {
+  height: 24px;
+}
+
+/* 日期范围起止之间的分隔符 */
+.range-sep {
+  margin: 0 4px;
+  color: #909399;
 }
 
 /* 第一行字段之间不留空隙 */
@@ -1258,37 +1506,6 @@ const handleSave = async () => {
   padding: 0 4px;
 }
 
-.order-select-input {
-  width: auto;
-  flex: 0 0 auto;
-  min-width: 160px;
-  max-width: 200px;
-}
-
-/* 订单下拉：订单号 / 订单序号 / 订单品号 / 开单日期 / 客户代码 五列 */
-.order-option {
-  display: flex;
-  align-items: center;
-  font-size: 10px;
-}
-.order-option .col-docno {
-  flex: 0 0 150px;
-}
-.order-option .col-seq {
-  flex: 0 0 50px;
-  text-align: center;
-}
-.order-option .col-item {
-  flex: 0 0 110px;
-}
-.order-option .col-date {
-  flex: 0 0 90px;
-}
-.order-option .col-customer {
-  flex: 1 1 auto;
-  color: #909399;
-}
-
 .dept-name-tag {
   flex: 0 1 auto;
   min-width: 0;
@@ -1310,11 +1527,37 @@ const handleSave = async () => {
   overflow: hidden;
 }
 
+/* 折叠态侧栏窄条：26px 竖条，竖排文字 + 箭头，点击展开 */
+.table-area .collapsed-strip {
+  flex: 0 0 26px;
+  width: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  color: #909399;
+  transition: background-color 0.2s, color 0.2s;
+}
+.table-area .collapsed-strip:hover {
+  background: #ecf5ff;
+  color: #409eff;
+}
+.table-area .collapsed-strip .strip-text {
+  writing-mode: vertical-rl;
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
 .left-panel {
   flex: 0 0 auto;
   min-width: 0;
   background: #fff;
-  border: 1px solid #000;
+  border: 1px solid #ebeef5;
   border-right: none;
   border-radius: 4px 0 0 4px;
   overflow: hidden;
@@ -1331,11 +1574,19 @@ const handleSave = async () => {
   background: #409eff;
 }
 
+/* 已审核（只读）行置灰标识 */
+.schedule-page :deep(.el-table .locked-row) {
+  background-color: #f5f7fa;
+}
+.schedule-page :deep(.el-table .locked-row:hover > td.el-table__cell) {
+  background-color: #ebeef5;
+}
+
 .right-panel {
   flex: 1;
   min-width: 0;
   background: #fff;
-  border: 1px solid #000;
+  border: 1px solid #ebeef5;
   border-radius: 0 4px 4px 0;
   overflow: hidden;
 }
@@ -1368,25 +1619,30 @@ const handleSave = async () => {
 }
 
 /* 日期列可编辑输入框：铺满单元格，四周无空隙 */
-/* 1) 整个外层 cell 与 .cell 容器内边距归零，避免上下左右留白 */
+/* 1) 整个外层 cell 与 .cell 容器内边距归零，避免上下左右留白；
+      .cell 用纵向 flex，让输入框 flex:1 撑满整格高度 */
 .schedule-page :deep(.el-table td.el-table__cell .cell:has(.daily-input.center-input)) {
   padding: 0 !important;
+  display: flex;
+  flex-direction: column;
 }
 .schedule-page :deep(.el-table td.el-table__cell:has(.daily-input.center-input)) {
   padding: 0 !important;
 }
 
-/* 2) el-input-number 自身撑满 cell */
+/* 2) el-input-number 自身撑满 cell（宽度 + 高度） */
 .daily-input {
   width: 100% !important;
+  flex: 1;
   display: block;
   background-color: #a8d8ff !important;
 }
-/* 3) input-number 内嵌的 el-input / wrapper 全部去掉内边距、阴影、圆角 */
+/* 3) input-number 内嵌的 el-input / wrapper 全部去掉内边距、阴影、圆角，并纵向撑满 */
 .daily-input :deep(.el-input-number),
 .daily-input :deep(.el-input),
 .daily-input :deep(.el-input__wrapper) {
   width: 100%;
+  height: 100%;
   padding: 0;
   border-radius: 0;
   box-shadow: none !important;
@@ -1394,6 +1650,7 @@ const handleSave = async () => {
 }
 /* 4) 日期列输入框背景设为浅蓝色（铺满根 + 内部各层） */
 .daily-input :deep(.el-input__inner) {
+  height: 100%;
   background-color: #a8d8ff !important;
 }
 .daily-input :deep(.el-input__wrapper.is-focus),
@@ -1409,6 +1666,31 @@ const handleSave = async () => {
   padding: 0 !important;
   border: 0 !important;
   background-color: #a8d8ff !important;
+}
+
+/* 人数 / 工作时长 / UPPH值 / 日产量：铺满单元格、四周无空隙（处理方式同日期列） */
+.schedule-page :deep(.el-table td.el-table__cell.plan-cell),
+.schedule-page :deep(.el-table td.el-table__cell.plan-cell .cell) {
+  padding: 0 !important;
+}
+.plan-input {
+  width: 100% !important;
+  display: block;
+}
+.plan-input :deep(.el-input__wrapper) {
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none !important;
+}
+.plan-input :deep(.el-input__inner) {
+  text-align: center;
+}
+
+/* 保存 JSON 文本框：临时缩效隐藏（需要时删除 json-mini 类及相关样式即可恢复） */
+.json-mini :deep(.el-textarea__inner) {
+  height: 5px !important;
+  min-height: 5px !important;
+  resize: none;
 }
 
 /* 日计划数量校验：合计 vs 生产数量 — 颜色提示 */
@@ -1428,6 +1710,14 @@ const handleSave = async () => {
 }
 .schedule-page :deep(.el-table td.el-table__cell .line-select .el-select__suffix) {
   right: 0;
+}
+/* 产线为必填项：未选值时背景浅红标识（EP 2.5+ el-select 背景在 .el-select__wrapper） */
+.schedule-page :deep(.el-table td.el-table__cell .line-select.line-required .el-select__wrapper) {
+  background-color: #fde2e2;
+}
+.schedule-page :deep(.el-table td.el-table__cell .line-select.line-required .el-select__wrapper.is-focused),
+.schedule-page :deep(.el-table td.el-table__cell .line-select.line-required .el-select__wrapper:hover) {
+  background-color: #f9c6c6;
 }
 .daily-input :deep(.el-input__inner) {
   text-align: center;
@@ -1452,5 +1742,28 @@ const handleSave = async () => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 右键菜单（左右两表通用） */
+.ctx-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 170px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.12);
+  padding: 5px 0;
+  font-size: 12px;
+}
+.ctx-menu-item {
+  padding: 7px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: #303133;
+}
+.ctx-menu-item:hover {
+  background: #ecf5ff;
+  color: #409eff;
 }
 </style>

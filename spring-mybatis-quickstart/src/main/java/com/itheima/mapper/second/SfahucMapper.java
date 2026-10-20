@@ -63,7 +63,10 @@ public interface SfahucMapper {
      */
     @Select("select NVL(SUM(sfahuc016),0) from sfahuc_t " +
             "where sfahucent=TO_NUMBER(#{sfahucent}) and sfahucsite=#{sfahucsite} " +
-            "and sfahuc004=#{sfahuc004} and sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},''))")
+            "and sfahuc004=#{sfahuc004} " +
+            // 序号为空时按 IS NULL 匹配，避免 TO_NUMBER(NULL) 使条件恒不成立导致查不到/插不进
+            "and ((NULLIF(#{sfahuc005},'') IS NULL and sfahuc005 IS NULL) " +
+            "     or sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},'')))")
     BigDecimal sumScheduleQtyByOrderSeq(@Param("sfahucent") String sfahucent,
                                         @Param("sfahucsite") String sfahucsite,
                                         @Param("sfahuc004") String sfahuc004,
@@ -76,7 +79,10 @@ public interface SfahucMapper {
      */
     @Select("select NVL(SUM(sfahuc016),0) from sfahuc_t " +
             "where sfahucent=TO_NUMBER(#{sfahucent}) and sfahucsite=#{sfahucsite} " +
-            "and sfahuc004=#{sfahuc004} and sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},'')) " +
+            "and sfahuc004=#{sfahuc004} " +
+            // 序号为空时按 IS NULL 匹配，避免 TO_NUMBER(NULL) 使条件恒不成立导致查不到/插不进
+            "and ((NULLIF(#{sfahuc005},'') IS NULL and sfahuc005 IS NULL) " +
+            "     or sfahuc005=TO_NUMBER(NULLIF(#{sfahuc005},''))) " +
             "and sfahuc002=#{sfahuc002}")
     BigDecimal sumScheduleQtyByOrderItem(@Param("sfahucent") String sfahucent,
                                          @Param("sfahucsite") String sfahucsite,

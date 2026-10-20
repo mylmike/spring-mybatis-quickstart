@@ -1,19 +1,32 @@
-#AI记忆缓存
+# AI 记忆保存
 dd/.codebuddy/
 
-#前端依赖、构建产物
+# 前端依赖、构建产物
 dd/node_modules/
 dd/dist/
 dd/.vscode/
 
-#后端
+# 后端
 .idea/
 target/
 *.iml
 *.class
 
-#系统文件
+# 系统文件
 *.log
 .DS_Store
 MEMORY.md
-2026‑08‑25.md
+2026-08-25.md
+deploy/*.local.properties
+
+.fake
+
+# CodeBuddy 项目记忆（AI 本地上下文，不入库）
+.codebuddy/
+
+# 商业资料等 Excel（敏感数据，不入库）
+*.xlsx
+
+# Postman 环境可能含 token，不入库
+.postman/
+postman/
